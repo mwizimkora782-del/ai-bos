@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
-import { Terminal, Users, Layers, Activity, Send, Landmark, LogOut } from 'lucide-react';
+import { Terminal, Users, Layers, Activity, Send, Landmark, LogOut, Zap } from 'lucide-react';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -11,11 +11,10 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export default function Dashboard() {
   const router = useRouter();
   const [isAuthenticating, setIsAuthenticating] = useState(true);
-  const [messages, setMessages] = useState([{ role: 'ai', text: 'Welcome back. Your unified AI team is standing by. State your objective.' }]);
+  const [messages, setMessages] = useState([{ role: 'ai_ceo', text: 'Welcome back. Your unified AI team is standing by. State your objective.' }]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Enterprise Security Check
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -33,6 +32,7 @@ export default function Dashboard() {
     router.push('/login');
   };
 
+  // Standard CEO Chat
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || loading) return;
@@ -46,13 +46,36 @@ export default function Dashboard() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: input })
+        body: JSON.stringify({ message: userMessage.text })
       });
       const data = await response.json();
-      
-      setMessages((prev) => [...prev, { role: 'ai', text: data.reply || data.error || 'System anomaly encountered.' }]);
+      setMessages((prev) => [...prev, { role: 'ai_ceo', text: data.reply || data.error }]);
     } catch (err) {
-      setMessages((prev) => [...prev, { role: 'ai', text: 'Network connection link severed.' }]);
+      setMessages((prev) => [...prev, { role: 'ai_ceo', text: 'Network connection link severed.' }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Automated Marketing Workflow
+  const triggerMarketingWorkflow = async () => {
+    if (loading) return;
+    const targetProduct = prompt("What product are we creating a campaign for?");
+    if (!targetProduct) return;
+
+    setMessages((prev) => [...prev, { role: 'user', text: `Execute 3-Day Email Campaign for: ${targetProduct}` }]);
+    setLoading(true);
+
+    try {
+      const response = await fetch('/api/marketing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product: targetProduct })
+      });
+      const data = await response.json();
+      setMessages((prev) => [...prev, { role: 'ai_marketing', text: data.reply || data.error }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, { role: 'ai_marketing', text: 'Marketing Agent offline.' }]);
     } finally {
       setLoading(false);
     }
@@ -102,7 +125,6 @@ export default function Dashboard() {
             <div className="bg-neutral-900 border border-neutral-800 px-3 py-1.5 rounded text-neutral-400 flex items-center gap-1.5">
               <Landmark size={12} className="text-neutral-500" /> Layer: <span className="text-white font-mono font-bold">Secure</span>
             </div>
-            {/* Mobile Logout Button */}
             <button onClick={handleLogout} className="md:hidden bg-red-950/30 border border-red-900/50 px-3 py-1.5 rounded text-red-500 flex items-center">
                <LogOut size={14} />
             </button>
@@ -112,9 +134,13 @@ export default function Dashboard() {
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
           {messages.map((msg, idx) => (
             <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-xl rounded-xl px-4 py-3 text-sm leading-relaxed tracking-normal shadow-sm ${
-                msg.role === 'user' ? 'bg-white text-black font-normal' : 'bg-neutral-900 border border-neutral-850 text-neutral-100'
+              <div className={`max-w-xl rounded-xl px-4 py-3 text-sm leading-relaxed tracking-normal shadow-sm whitespace-pre-wrap ${
+                msg.role === 'user' ? 'bg-white text-black font-normal' : 
+                msg.role === 'ai_marketing' ? 'bg-indigo-950/40 border border-indigo-900/50 text-indigo-100' :
+                'bg-neutral-900 border border-neutral-850 text-neutral-100'
               }`}>
+                {msg.role === 'ai_marketing' && <div className="text-xs font-bold text-indigo-400 mb-2 border-b border-indigo-900/50 pb-1">MARKETING DEPT</div>}
+                {msg.role === 'ai_ceo' && idx !== 0 && <div className="text-xs font-bold text-emerald-500 mb-2 border-b border-neutral-800 pb-1">AI CEO</div>}
                 {msg.text}
               </div>
             </div>
@@ -122,14 +148,25 @@ export default function Dashboard() {
           {loading && (
             <div className="flex justify-start">
               <div className="bg-neutral-900 border border-neutral-850 text-neutral-400 rounded-xl px-4 py-3 text-sm animate-pulse">
-                AI Workforce analyzing data streams...
+                Workforce executing directive...
               </div>
             </div>
           )}
         </div>
 
-        <footer className="p-4 sm:p-6 bg-neutral-950/80 border-t border-neutral-900">
-          <form onSubmit={handleSendMessage} className="relative flex items-center max-w-4xl mx-auto w-full">
+        <footer className="p-4 sm:p-6 bg-neutral-950/80 border-t border-neutral-900 flex flex-col gap-3">
+          {/* Quick Actions Bar */}
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+            <button 
+              onClick={triggerMarketingWorkflow}
+              disabled={loading}
+              className="flex items-center gap-1.5 whitespace-nowrap bg-neutral-900 border border-neutral-800 text-indigo-400 font-medium text-xs px-3 py-2 rounded-lg hover:bg-neutral-800 transition disabled:opacity-50"
+            >
+              <Zap size={14} /> + 3-Day Email Campaign
+            </button>
+          </div>
+
+          <form onSubmit={handleSendMessage} className="relative flex items-center w-full">
             <input
               type="text"
               value={input}
@@ -146,4 +183,4 @@ export default function Dashboard() {
       </main>
     </div>
   );
-            }
+}
