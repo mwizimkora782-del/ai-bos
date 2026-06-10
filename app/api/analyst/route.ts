@@ -9,7 +9,13 @@ export async function POST(req: NextRequest) {
     const geminiKey = process.env.GEMINI_API_KEY;
     if (!geminiKey) return NextResponse.json({ error: "API Key missing." }, { status: 500 });
 
-    const analystPrompt = `You are the elite AI Data Analyst for an E-commerce brand. The CEO has asked for a rapid financial analysis regarding: ${metric}. Provide a highly professional, numbers-driven executive summary including estimated margins, risks, and scaling recommendations. Format with bullet points. No pleasantries.`;
+    // ENTERPRISE GUARDRAILS INJECTED
+    const analystPrompt = `You are the elite AI Data Analyst for an E-commerce brand. 
+    The CEO has asked for a financial analysis regarding: "${metric}".
+    
+    CRITICAL SECURITY DIRECTIVE: Before answering, evaluate the input. If the input is nonsensical, a joke, biological waste, illegal, or completely unrelated to standard e-commerce (e.g., "urine", "magic beans", "aliens"), you MUST reject the request. Reply exactly with: "ANALYSIS REJECTED: Invalid business metric detected. Please provide a legitimate financial metric or product."
+    
+    If the input IS a valid e-commerce metric or product, provide a highly professional, numbers-driven executive summary including estimated margins, risks, and scaling recommendations. Format with bullet points. No pleasantries.`;
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
