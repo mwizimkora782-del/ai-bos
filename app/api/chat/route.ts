@@ -14,12 +14,11 @@ export async function POST(req: NextRequest) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    // Check keys but do not crash the runtime if DB keys are missing; just flag it.
     if (!geminiKey) {
-      return NextResponse.json({ error: "AI Engine credentials missing." }, { status: 500 });
+      return NextResponse.json({ error: "System Configuration Error: GEMINI_API_KEY is missing in Vercel." }, { status: 500 });
     }
 
-    // 1. Call Google Gemini AI
+    // Call Google Gemini API
     const geminiResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,
       {
@@ -31,14 +30,16 @@ export async function POST(req: NextRequest) {
       }
     );
 
+    // DEBUGGING UPGRADE: If Google rejects the call, capture their exact reason
     if (!geminiResponse.ok) {
-       return NextResponse.json({ error: "AI Provider latency or failure." }, { status: 502 });
+       const errorDetails = await geminiResponse.text();
+       return NextResponse.json({ error: `Google API Rejection: Status ${geminiResponse.status} - ${errorDetails}` }, { status: 502 });
     }
 
     const data = await geminiResponse.json();
     const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Operational analysis complete, awaiting output display.";
 
-    // 2. Safe Database Insertion (Will not crash the chat if DB fails)
+    // Safe Database Insertion 
     if (supabaseUrl && supabaseKey) {
       try {
         const supabase = createClient(supabaseUrl, supabaseKey);
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
           { sender: 'ai_ceo', content: aiText }
         ]);
       } catch (dbError) {
-        console.error("Database sync failed, but maintaining chat runtime.");
+        console.error("Database sync failed.");
       }
     }
 
@@ -57,4 +58,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Fatal backend exception." }, { status: 500 });
   }
 }
-
