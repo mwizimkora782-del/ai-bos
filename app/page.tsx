@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { Terminal, Users, Layers, Activity, Send, Landmark, LogOut, Zap, BarChart3 } from 'lucide-react';
@@ -11,20 +11,48 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export default function Dashboard() {
   const router = useRouter();
   const [isAuthenticating, setIsAuthenticating] = useState(true);
-  const [messages, setMessages] = useState([{ role: 'ai_ceo', text: 'Welcome back. Your unified AI team is standing by. State your objective.' }]);
+  const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when new messages appear
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   useEffect(() => {
-    const checkAuth = async () => {
+    scrollToBottom();
+  }, [messages]);
+
+  // Enterprise Security & Memory Fetch
+  useEffect(() => {
+    const initializeSystem = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         router.push('/login');
-      } else {
-        setIsAuthenticating(false);
+        return;
       }
+      
+      // Fetch historical memory from database
+      const { data: history, error } = await supabase
+        .from('messages')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (history && history.length > 0) {
+        setMessages(history.map(msg => ({
+          role: msg.sender,
+          text: msg.content
+        })));
+      } else {
+        setMessages([{ role: 'ai_ceo', text: 'System initialized. No previous memory found. State your objective.' }]);
+      }
+      
+      setIsAuthenticating(false);
     };
-    checkAuth();
+    
+    initializeSystem();
   }, [router]);
 
   const handleLogout = async () => {
@@ -103,7 +131,7 @@ export default function Dashboard() {
   };
 
   if (isAuthenticating) {
-    return <div className="flex h-screen items-center justify-center bg-black text-white text-sm">Verifying enterprise credentials...</div>;
+    return <div className="flex h-screen items-center justify-center bg-black text-white text-sm">Synchronizing Enterprise Memory...</div>;
   }
 
   return (
@@ -163,7 +191,7 @@ export default function Dashboard() {
               }`}>
                 {msg.role === 'ai_marketing' && <div className="text-xs font-bold text-indigo-400 mb-2 border-b border-indigo-900/50 pb-1 flex items-center gap-1"><Zap size={12}/> MARKETING DEPT</div>}
                 {msg.role === 'ai_analyst' && <div className="text-xs font-bold text-emerald-400 mb-2 border-b border-emerald-900/50 pb-1 flex items-center gap-1"><BarChart3 size={12}/> DATA ANALYST</div>}
-                {msg.role === 'ai_ceo' && idx !== 0 && <div className="text-xs font-bold text-neutral-400 mb-2 border-b border-neutral-800 pb-1">AI CEO</div>}
+                {msg.role === 'ai_ceo' && <div className="text-xs font-bold text-neutral-400 mb-2 border-b border-neutral-800 pb-1">AI CEO</div>}
                 {msg.text}
               </div>
             </div>
@@ -175,10 +203,10 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+          <div ref={messagesEndRef} />
         </div>
 
         <footer className="p-4 sm:p-6 bg-neutral-950/80 border-t border-neutral-900 flex flex-col gap-3">
-          {/* Multi-Agent Quick Actions Bar */}
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
             <button 
               onClick={triggerMarketingWorkflow}
@@ -213,5 +241,5 @@ export default function Dashboard() {
       </main>
     </div>
   );
-            }
-              
+                                   }
+      
