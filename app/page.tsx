@@ -16,7 +16,6 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when new messages appear
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -25,7 +24,6 @@ export default function Dashboard() {
     scrollToBottom();
   }, [messages]);
 
-  // Enterprise Security & Memory Fetch
   useEffect(() => {
     const initializeSystem = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -34,7 +32,6 @@ export default function Dashboard() {
         return;
       }
       
-      // Fetch historical memory from database
       const { data: history, error } = await supabase
         .from('messages')
         .select('*')
@@ -46,7 +43,7 @@ export default function Dashboard() {
           text: msg.content
         })));
       } else {
-        setMessages([{ role: 'ai_ceo', text: 'System initialized. No previous memory found. State your objective.' }]);
+        setMessages([{ role: 'ai_ceo', text: 'System initialized. State your objective.' }]);
       }
       
       setIsAuthenticating(false);
@@ -75,10 +72,15 @@ export default function Dashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userMessage.text })
       });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP Error ${response.status}: Failed to reach API.`);
+      }
+      
       const data = await response.json();
       setMessages((prev) => [...prev, { role: 'ai_ceo', text: data.reply || data.error }]);
-    } catch (err) {
-      setMessages((prev) => [...prev, { role: 'ai_ceo', text: 'Network connection link severed.' }]);
+    } catch (err: any) {
+      setMessages((prev) => [...prev, { role: 'ai_ceo', text: `CRITICAL ERROR: ${err.message}` }]);
     } finally {
       setLoading(false);
     }
@@ -98,10 +100,15 @@ export default function Dashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ product: targetProduct })
       });
+      
+      if (!response.ok) {
+         throw new Error(`HTTP Error ${response.status}. The file app/api/marketing/route.ts might be missing or broken.`);
+      }
+      
       const data = await response.json();
       setMessages((prev) => [...prev, { role: 'ai_marketing', text: data.reply || data.error }]);
-    } catch (err) {
-      setMessages((prev) => [...prev, { role: 'ai_marketing', text: 'Marketing Agent offline.' }]);
+    } catch (err: any) {
+      setMessages((prev) => [...prev, { role: 'ai_marketing', text: `CRITICAL ERROR: ${err.message}` }]);
     } finally {
       setLoading(false);
     }
@@ -121,10 +128,15 @@ export default function Dashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ metric: targetMetric })
       });
+      
+      if (!response.ok) {
+         throw new Error(`HTTP Error ${response.status}. The file app/api/analyst/route.ts might be missing or broken.`);
+      }
+      
       const data = await response.json();
       setMessages((prev) => [...prev, { role: 'ai_analyst', text: data.reply || data.error }]);
-    } catch (err) {
-      setMessages((prev) => [...prev, { role: 'ai_analyst', text: 'Data Analyst offline.' }]);
+    } catch (err: any) {
+      setMessages((prev) => [...prev, { role: 'ai_analyst', text: `CRITICAL ERROR: ${err.message}` }]);
     } finally {
       setLoading(false);
     }
@@ -241,5 +253,5 @@ export default function Dashboard() {
       </main>
     </div>
   );
-                                   }
-      
+  }
+              
