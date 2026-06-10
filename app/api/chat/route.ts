@@ -15,29 +15,43 @@ export async function POST(req: NextRequest) {
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!geminiKey) {
-      return NextResponse.json({ error: "System Configuration Error: GEMINI_API_KEY is missing in Vercel." }, { status: 500 });
+      return NextResponse.json({ error: "System Configuration Error: GEMINI_API_KEY missing." }, { status: 500 });
     }
 
-    // Call Google Gemini API using the updated 2.5 Flash model
+    // INDUSTRY SPECIALIZATION: E-COMMERCE CORE
+    const ecommerceSystemPrompt = `
+      You are the elite AI CEO for a scaling E-commerce Enterprise. 
+      Your primary operational directives are:
+      1. Maximize Return on Ad Spend (ROAS).
+      2. Decrease cart abandonment rates.
+      3. Optimize inventory turnover.
+      4. Increase Customer Lifetime Value (CLV).
+      
+      When the user asks you a question, answer with strict, data-driven e-commerce strategies. 
+      Do not give generic business advice. Use e-commerce terminology (AOV, CAC, conversion rate).
+      
+      User Directive: ${message}
+    `;
+
+    // Call Google Gemini 2.5 Flash
     const geminiResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: `You are the executive AI CEO for an enterprise platform. Answer this operational user directive with absolute data-driven clarity: ${message}` }] }]
+          contents: [{ parts: [{ text: ecommerceSystemPrompt }] }]
         })
       }
     );
 
-    // DEBUGGING UPGRADE: If Google rejects the call, capture their exact reason
     if (!geminiResponse.ok) {
        const errorDetails = await geminiResponse.text();
        return NextResponse.json({ error: `Google API Rejection: Status ${geminiResponse.status} - ${errorDetails}` }, { status: 502 });
     }
 
     const data = await geminiResponse.json();
-    const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Operational analysis complete, awaiting output display.";
+    const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "E-commerce analysis complete.";
 
     // Safe Database Insertion 
     if (supabaseUrl && supabaseKey) {
