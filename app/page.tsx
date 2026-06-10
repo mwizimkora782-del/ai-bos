@@ -1,6 +1,6 @@
 'use client';
 import React, { useState } from 'react';
-import { Terminal, Users, Layers, Activity, Send, Briefcase, Landmark } from 'lucide-react';
+import { Terminal, Users, Layers, Activity, Send, Landmark } from 'lucide-react';
 
 export default function Dashboard() {
   const [messages, setMessages] = useState([
@@ -65,7 +65,6 @@ export default function Dashboard() {
 
       {/* Main Workspace Terminal Frame */}
       <main className="flex-1 flex flex-col min-w-0 bg-neutral-900/20">
-        {/* Dynamic Metric Display Dashboard Panel */}
         <header className="border-b border-neutral-900 p-4 sm:p-6 flex justify-between items-center bg-neutral-950/80">
           <div>
             <h1 className="text-sm sm:text-md font-medium tracking-tight text-white">HQ Control Interface</h1>
@@ -123,5 +122,4 @@ export default function Dashboard() {
       </main>
     </div>
   );
-                             }
-        
+}
