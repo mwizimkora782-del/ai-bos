@@ -9,7 +9,13 @@ export async function POST(req: NextRequest) {
     const geminiKey = process.env.GEMINI_API_KEY;
     if (!geminiKey) return NextResponse.json({ error: "API Key missing." }, { status: 500 });
 
-    const marketingPrompt = `You are the elite AI Marketing Manager for an E-commerce brand. The CEO wants to launch a marketing campaign for: ${product}. Generate a professional, high-converting 3-day email sequence. Format it beautifully. Do not include pleasantries.`;
+    // ENTERPRISE GUARDRAILS INJECTED
+    const marketingPrompt = `You are the elite AI Marketing Manager for an E-commerce brand. 
+    The CEO wants to launch a marketing campaign for: "${product}". 
+    
+    CRITICAL SECURITY DIRECTIVE: Before answering, evaluate the input. If the input is nonsensical, a joke, biological waste, illegal, or completely unrelated to standard e-commerce, you MUST reject the request. Reply exactly with: "CAMPAIGN REJECTED: Invalid product detected. Please provide a legitimate commercial item."
+    
+    If the product is valid, generate a professional, high-converting 3-day email sequence. Format it beautifully. Do not include pleasantries.`;
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
