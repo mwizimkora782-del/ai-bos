@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
-import { Terminal, Users, Layers, Activity, Send, Landmark, LogOut, Zap } from 'lucide-react';
+import { Terminal, Users, Layers, Activity, Send, Landmark, LogOut, Zap, BarChart3 } from 'lucide-react';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -32,7 +32,6 @@ export default function Dashboard() {
     router.push('/login');
   };
 
-  // Standard CEO Chat
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || loading) return;
@@ -57,7 +56,6 @@ export default function Dashboard() {
     }
   };
 
-  // Automated Marketing Workflow
   const triggerMarketingWorkflow = async () => {
     if (loading) return;
     const targetProduct = prompt("What product are we creating a campaign for?");
@@ -76,6 +74,29 @@ export default function Dashboard() {
       setMessages((prev) => [...prev, { role: 'ai_marketing', text: data.reply || data.error }]);
     } catch (err) {
       setMessages((prev) => [...prev, { role: 'ai_marketing', text: 'Marketing Agent offline.' }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const triggerAnalystWorkflow = async () => {
+    if (loading) return;
+    const targetMetric = prompt("What financial metric or recent campaign should I analyze?");
+    if (!targetMetric) return;
+
+    setMessages((prev) => [...prev, { role: 'user', text: `Run Financial Analysis on: ${targetMetric}` }]);
+    setLoading(true);
+
+    try {
+      const response = await fetch('/api/analyst', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ metric: targetMetric })
+      });
+      const data = await response.json();
+      setMessages((prev) => [...prev, { role: 'ai_analyst', text: data.reply || data.error }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, { role: 'ai_analyst', text: 'Data Analyst offline.' }]);
     } finally {
       setLoading(false);
     }
@@ -137,10 +158,12 @@ export default function Dashboard() {
               <div className={`max-w-xl rounded-xl px-4 py-3 text-sm leading-relaxed tracking-normal shadow-sm whitespace-pre-wrap ${
                 msg.role === 'user' ? 'bg-white text-black font-normal' : 
                 msg.role === 'ai_marketing' ? 'bg-indigo-950/40 border border-indigo-900/50 text-indigo-100' :
+                msg.role === 'ai_analyst' ? 'bg-emerald-950/40 border border-emerald-900/50 text-emerald-100' :
                 'bg-neutral-900 border border-neutral-850 text-neutral-100'
               }`}>
-                {msg.role === 'ai_marketing' && <div className="text-xs font-bold text-indigo-400 mb-2 border-b border-indigo-900/50 pb-1">MARKETING DEPT</div>}
-                {msg.role === 'ai_ceo' && idx !== 0 && <div className="text-xs font-bold text-emerald-500 mb-2 border-b border-neutral-800 pb-1">AI CEO</div>}
+                {msg.role === 'ai_marketing' && <div className="text-xs font-bold text-indigo-400 mb-2 border-b border-indigo-900/50 pb-1 flex items-center gap-1"><Zap size={12}/> MARKETING DEPT</div>}
+                {msg.role === 'ai_analyst' && <div className="text-xs font-bold text-emerald-400 mb-2 border-b border-emerald-900/50 pb-1 flex items-center gap-1"><BarChart3 size={12}/> DATA ANALYST</div>}
+                {msg.role === 'ai_ceo' && idx !== 0 && <div className="text-xs font-bold text-neutral-400 mb-2 border-b border-neutral-800 pb-1">AI CEO</div>}
                 {msg.text}
               </div>
             </div>
@@ -155,14 +178,21 @@ export default function Dashboard() {
         </div>
 
         <footer className="p-4 sm:p-6 bg-neutral-950/80 border-t border-neutral-900 flex flex-col gap-3">
-          {/* Quick Actions Bar */}
+          {/* Multi-Agent Quick Actions Bar */}
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
             <button 
               onClick={triggerMarketingWorkflow}
               disabled={loading}
               className="flex items-center gap-1.5 whitespace-nowrap bg-neutral-900 border border-neutral-800 text-indigo-400 font-medium text-xs px-3 py-2 rounded-lg hover:bg-neutral-800 transition disabled:opacity-50"
             >
-              <Zap size={14} /> + 3-Day Email Campaign
+              <Zap size={14} /> + Email Campaign
+            </button>
+            <button 
+              onClick={triggerAnalystWorkflow}
+              disabled={loading}
+              className="flex items-center gap-1.5 whitespace-nowrap bg-neutral-900 border border-neutral-800 text-emerald-400 font-medium text-xs px-3 py-2 rounded-lg hover:bg-neutral-800 transition disabled:opacity-50"
+            >
+              <BarChart3 size={14} /> + Financial Analysis
             </button>
           </div>
 
@@ -183,4 +213,5 @@ export default function Dashboard() {
       </main>
     </div>
   );
-}
+            }
+              
