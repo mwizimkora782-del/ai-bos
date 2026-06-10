@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
-import { Terminal, Users, Layers, Activity, Send, Landmark, LogOut, Zap, BarChart3 } from 'lucide-react';
+import { Terminal, Users, Layers, Activity, Send, Landmark, LogOut, Zap, BarChart3, Lock } from 'lucide-react';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -32,7 +32,7 @@ export default function Dashboard() {
         return;
       }
       
-      const { data: history, error } = await supabase
+      const { data: history } = await supabase
         .from('messages')
         .select('*')
         .order('created_at', { ascending: true });
@@ -57,9 +57,14 @@ export default function Dashboard() {
     router.push('/login');
   };
 
+  // SaaS METERING LOGIC: Calculate user interactions
+  const userInteractionCount = messages.filter(m => m.role === 'user').length;
+  const FREE_LIMIT = 5;
+  const isPaywalled = userInteractionCount >= FREE_LIMIT;
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || loading) return;
+    if (!input.trim() || loading || isPaywalled) return;
 
     const userMessage = { role: 'user', text: input };
     setMessages((prev) => [...prev, userMessage]);
@@ -72,22 +77,17 @@ export default function Dashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userMessage.text })
       });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP Error ${response.status}: Failed to reach API.`);
-      }
-      
       const data = await response.json();
       setMessages((prev) => [...prev, { role: 'ai_ceo', text: data.reply || data.error }]);
-    } catch (err: any) {
-      setMessages((prev) => [...prev, { role: 'ai_ceo', text: `CRITICAL ERROR: ${err.message}` }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, { role: 'ai_ceo', text: 'Network connection link severed.' }]);
     } finally {
       setLoading(false);
     }
   };
 
   const triggerMarketingWorkflow = async () => {
-    if (loading) return;
+    if (loading || isPaywalled) return;
     const targetProduct = prompt("What product are we creating a campaign for?");
     if (!targetProduct) return;
 
@@ -100,22 +100,17 @@ export default function Dashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ product: targetProduct })
       });
-      
-      if (!response.ok) {
-         throw new Error(`HTTP Error ${response.status}. The file app/api/marketing/route.ts might be missing or broken.`);
-      }
-      
       const data = await response.json();
       setMessages((prev) => [...prev, { role: 'ai_marketing', text: data.reply || data.error }]);
-    } catch (err: any) {
-      setMessages((prev) => [...prev, { role: 'ai_marketing', text: `CRITICAL ERROR: ${err.message}` }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, { role: 'ai_marketing', text: 'Marketing Agent offline.' }]);
     } finally {
       setLoading(false);
     }
   };
 
   const triggerAnalystWorkflow = async () => {
-    if (loading) return;
+    if (loading || isPaywalled) return;
     const targetMetric = prompt("What financial metric or recent campaign should I analyze?");
     if (!targetMetric) return;
 
@@ -128,15 +123,10 @@ export default function Dashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ metric: targetMetric })
       });
-      
-      if (!response.ok) {
-         throw new Error(`HTTP Error ${response.status}. The file app/api/analyst/route.ts might be missing or broken.`);
-      }
-      
       const data = await response.json();
       setMessages((prev) => [...prev, { role: 'ai_analyst', text: data.reply || data.error }]);
-    } catch (err: any) {
-      setMessages((prev) => [...prev, { role: 'ai_analyst', text: `CRITICAL ERROR: ${err.message}` }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, { role: 'ai_analyst', text: 'Data Analyst offline.' }]);
     } finally {
       setLoading(false);
     }
@@ -147,7 +137,27 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="flex h-screen bg-neutral-950 text-neutral-200 overflow-hidden text-xs sm:text-sm">
+    <div className="flex h-screen bg-neutral-950 text-neutral-200 overflow-hidden text-xs sm:text-sm relative">
+      
+      {/* PAYWALL OVERLAY */}
+      {isPaywalled && (
+        <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 p-8 rounded-2xl max-w-md w-full text-center shadow-2xl">
+            <div className="mx-auto w-12 h-12 bg-indigo-500/20 text-indigo-400 flex items-center justify-center rounded-full mb-4">
+              <Lock size={24} />
+            </div>
+            <h2 className="text-xl font-bold text-white mb-2">Compute Limit Reached</h2>
+            <p className="text-neutral-400 mb-6 text-sm">You have exhausted your free tier execution cycles. Upgrade to the Professional Plan to unlock unlimited AI workforce access.</p>
+            <button className="w-full bg-white text-black font-semibold py-3 rounded-xl hover:bg-neutral-200 transition">
+              Upgrade to Pro - $49/mo
+            </button>
+            <button onClick={handleLogout} className="w-full mt-3 text-neutral-500 text-xs hover:text-white transition">
+              Log out
+            </button>
+          </div>
+        </div>
+      )}
+
       <aside className="hidden md:flex w-64 border-r border-neutral-900 bg-neutral-950 p-6 flex-col justify-between">
         <div>
           <div className="flex items-center gap-2 mb-8">
@@ -170,8 +180,14 @@ export default function Dashboard() {
           <button onClick={handleLogout} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-red-500 hover:bg-red-950/30 transition text-left">
             <LogOut size={16} /> Terminate Session
           </button>
-          <div className="flex items-center gap-2 text-xs text-neutral-500 border-t border-neutral-900 pt-4">
-            <Activity size={12} className="text-emerald-500" /> Active Scale Instance
+          <div className="flex flex-col gap-2 border-t border-neutral-900 pt-4">
+            <div className="flex items-center justify-between text-xs text-neutral-500">
+              <span className="flex items-center gap-1.5"><Activity size={12} className="text-emerald-500" /> Free Tier</span>
+              <span>{FREE_LIMIT - userInteractionCount} credits left</span>
+            </div>
+            <div className="w-full bg-neutral-900 rounded-full h-1.5">
+              <div className="bg-emerald-500 h-1.5 rounded-full transition-all" style={{ width: `${(userInteractionCount / FREE_LIMIT) * 100}%` }}></div>
+            </div>
           </div>
         </div>
       </aside>
@@ -222,14 +238,14 @@ export default function Dashboard() {
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
             <button 
               onClick={triggerMarketingWorkflow}
-              disabled={loading}
+              disabled={loading || isPaywalled}
               className="flex items-center gap-1.5 whitespace-nowrap bg-neutral-900 border border-neutral-800 text-indigo-400 font-medium text-xs px-3 py-2 rounded-lg hover:bg-neutral-800 transition disabled:opacity-50"
             >
               <Zap size={14} /> + Email Campaign
             </button>
             <button 
               onClick={triggerAnalystWorkflow}
-              disabled={loading}
+              disabled={loading || isPaywalled}
               className="flex items-center gap-1.5 whitespace-nowrap bg-neutral-900 border border-neutral-800 text-emerald-400 font-medium text-xs px-3 py-2 rounded-lg hover:bg-neutral-800 transition disabled:opacity-50"
             >
               <BarChart3 size={14} /> + Financial Analysis
@@ -241,11 +257,11 @@ export default function Dashboard() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Instruct your AI Workforce..."
-              className="w-full bg-neutral-900 border border-neutral-800 rounded-xl pl-4 pr-12 py-3.5 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-neutral-700 transition"
-              disabled={loading}
+              placeholder={isPaywalled ? "Execution limit reached. Upgrade to continue." : "Instruct your AI Workforce..."}
+              className="w-full bg-neutral-900 border border-neutral-800 rounded-xl pl-4 pr-12 py-3.5 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-neutral-700 transition disabled:opacity-50"
+              disabled={loading || isPaywalled}
             />
-            <button type="submit" className="absolute right-3 p-2 rounded-lg bg-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-700 transition disabled:opacity-50" disabled={loading || !input.trim()}>
+            <button type="submit" className="absolute right-3 p-2 rounded-lg bg-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-700 transition disabled:opacity-50" disabled={loading || isPaywalled || !input.trim()}>
               <Send size={14} />
             </button>
           </form>
@@ -253,5 +269,5 @@ export default function Dashboard() {
       </main>
     </div>
   );
-  }
-              
+              }
+            
