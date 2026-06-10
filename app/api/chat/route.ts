@@ -33,10 +33,9 @@ export async function POST(req: NextRequest) {
     const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Operational analysis timed out.";
 
     // 3. Component 5 integration: Parallel async database execution tracking
-    // For MVP prototyping simulation, we insert into messages log layout
     await supabase.from('messages').insert([
-      { sender: 'user', content: message, profile_id: '00000000-0000-0000-0000-000000000000' },
-      { sender: 'ai_ceo', content: aiText, profile_id: '00000000-0000-0000-0000-000000000000' }
+      { sender: 'user', content: message },
+      { sender: 'ai_ceo', content: aiText }
     ]).select();
 
     return NextResponse.json({ reply: aiText });
