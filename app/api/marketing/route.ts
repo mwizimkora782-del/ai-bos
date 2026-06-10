@@ -9,7 +9,6 @@ export async function POST(req: NextRequest) {
     const geminiKey = process.env.GEMINI_API_KEY;
     if (!geminiKey) return NextResponse.json({ error: "API Key missing." }, { status: 500 });
 
-    // ENTERPRISE GUARDRAILS INJECTED
     const marketingPrompt = `You are the elite AI Marketing Manager for an E-commerce brand. 
     The CEO wants to launch a marketing campaign for: "${product}". 
     
@@ -22,27 +21,48 @@ export async function POST(req: NextRequest) {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: marketingPrompt }] }] })
+        body: JSON.stringify({ 
+          contents: [{ parts: [{ text: marketingPrompt }] }],
+          safetySettings: [
+            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
+            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
+            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
+            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" }
+          ]
+        })
       }
     );
 
-    if (!response.ok) return NextResponse.json({ error: "Marketing Agent offline." }, { status: 502 });
+    if (!response.ok) {
+       const errorDetails = await response.text();
+       return NextResponse.json({ error: `Google API Firewall: ${response.status} - ${errorDetails}` }, { status: 502 });
+    }
 
     const data = await response.json();
-    const campaignText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Campaign generation failed.";
+    
+    let campaignText = "Campaign generation failed.";
+    if (data.candidates && data.candidates[0].content) {
+        campaignText = data.candidates[0].content.parts[0].text;
+    } else if (data.promptFeedback) {
+        campaignText = `SYSTEM OVERRIDE: Google Safety Blocked this prompt. Reason: ${data.promptFeedback.blockReason}`;
+    }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (supabaseUrl && supabaseKey) {
-      const supabase = createClient(supabaseUrl, supabaseKey);
-      await supabase.from('messages').insert([
-        { sender: 'user', content: `Execute 3-Day Email Campaign for: ${product}` },
-        { sender: 'ai_marketing', content: campaignText }
-      ]);
+      try {
+        const supabase = createClient(supabaseUrl, supabaseKey);
+        await supabase.from('messages').insert([
+          { sender: 'user', content: `Execute 3-Day Email Campaign for: ${product}` },
+          { sender: 'ai_marketing', content: campaignText }
+        ]);
+      } catch (dbError) {
+        console.error("Database sync failed.");
+      }
     }
 
     return NextResponse.json({ reply: campaignText });
-  } catch (err) {
-    return NextResponse.json({ error: "Fatal backend exception." }, { status: 500 });
+  } catch (err: any) {
+    return NextResponse.json({ error: `Backend exception: ${err.message}` }, { status: 500 });
   }
 }
