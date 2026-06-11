@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
-import { Terminal, Users, Layers, Activity, Send, Landmark, LogOut, Zap, BarChart3, Lock } from 'lucide-react';
+import { Terminal, Users, Layers, Activity, Send, Landmark, LogOut, Zap, BarChart3, Lock, ShieldCheck } from 'lucide-react';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -14,6 +14,7 @@ export default function Dashboard() {
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isPro, setIsPro] = useState(false); // NEW: Enterprise Tier Tracking
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -31,7 +32,19 @@ export default function Dashboard() {
         router.push('/login');
         return;
       }
+
+      // Fetch User's Professional Status from Database
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_pro')
+        .eq('id', session.user.id)
+        .single();
+        
+      if (profile?.is_pro) {
+        setIsPro(true);
+      }
       
+      // Fetch Enterprise Memory
       const { data: history } = await supabase
         .from('messages')
         .select('*')
@@ -57,10 +70,10 @@ export default function Dashboard() {
     router.push('/login');
   };
 
-  // SaaS METERING LOGIC: Calculate user interactions
+  // SaaS METERING LOGIC: Bypass limits entirely if the user is PRO
   const userInteractionCount = messages.filter(m => m.role === 'user').length;
   const FREE_LIMIT = 5;
-  const isPaywalled = userInteractionCount >= FREE_LIMIT;
+  const isPaywalled = !isPro && userInteractionCount >= FREE_LIMIT;
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,7 +152,7 @@ export default function Dashboard() {
   return (
     <div className="flex h-screen bg-neutral-950 text-neutral-200 overflow-hidden text-xs sm:text-sm relative">
       
-      {/* PAYWALL OVERLAY */}
+      {/* PAYWALL OVERLAY - ONLY SHOWS IF NOT PRO */}
       {isPaywalled && (
         <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 p-8 rounded-2xl max-w-md w-full text-center shadow-2xl">
@@ -148,9 +161,8 @@ export default function Dashboard() {
             </div>
             <h2 className="text-xl font-bold text-white mb-2">Compute Limit Reached</h2>
             <p className="text-neutral-400 mb-6 text-sm">You have exhausted your free tier execution cycles. Upgrade to the Professional Plan to unlock unlimited AI workforce access.</p>
-            {/* UPDATED BUTTON ROUTING HERE */}
             <button onClick={() => router.push('/billing')} className="w-full bg-white text-black font-semibold py-3 rounded-xl hover:bg-neutral-200 transition">
-              Upgrade to Pro - $49/mo
+              Upgrade to Pro - KES 6,500/mo
             </button>
             <button onClick={handleLogout} className="w-full mt-3 text-neutral-500 text-xs hover:text-white transition">
               Log out
@@ -182,13 +194,22 @@ export default function Dashboard() {
             <LogOut size={16} /> Terminate Session
           </button>
           <div className="flex flex-col gap-2 border-t border-neutral-900 pt-4">
-            <div className="flex items-center justify-between text-xs text-neutral-500">
-              <span className="flex items-center gap-1.5"><Activity size={12} className="text-emerald-500" /> Free Tier</span>
-              <span>{Math.max(0, FREE_LIMIT - userInteractionCount)} credits left</span>
-            </div>
-            <div className="w-full bg-neutral-900 rounded-full h-1.5">
-              <div className="bg-emerald-500 h-1.5 rounded-full transition-all" style={{ width: `${Math.min(100, (userInteractionCount / FREE_LIMIT) * 100)}%` }}></div>
-            </div>
+            {isPro ? (
+              <div className="flex items-center justify-between text-xs text-indigo-400 font-bold p-2 bg-indigo-950/30 rounded-lg border border-indigo-900/50">
+                <span className="flex items-center gap-1.5"><ShieldCheck size={14} /> PRO INSTANCE</span>
+                <span>Unlimited</span>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between text-xs text-neutral-500">
+                  <span className="flex items-center gap-1.5"><Activity size={12} className="text-emerald-500" /> Free Tier</span>
+                  <span>{Math.max(0, FREE_LIMIT - userInteractionCount)} credits left</span>
+                </div>
+                <div className="w-full bg-neutral-900 rounded-full h-1.5">
+                  <div className="bg-emerald-500 h-1.5 rounded-full transition-all" style={{ width: `${Math.min(100, (userInteractionCount / FREE_LIMIT) * 100)}%` }}></div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </aside>
@@ -270,5 +291,4 @@ export default function Dashboard() {
       </main>
     </div>
   );
-    }
-                                       
+          }
