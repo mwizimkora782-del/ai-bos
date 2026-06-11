@@ -1,6 +1,7 @@
-// PROFESSIONAL OVERRIDE: Prevent Edge caching and force strict Node.js runtime
+// NUCLEAR CACHE OVERRIDES: Physically forces Vercel to bypass all edge caching
 export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs';
+export const fetchCache = 'force-no-store';
+export const revalidate = 0;
 
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -17,12 +18,13 @@ export async function POST(req: NextRequest) {
     if (formattedPhone.startsWith('0')) formattedPhone = '254' + formattedPhone.substring(1);
     if (formattedPhone.startsWith('+')) formattedPhone = formattedPhone.substring(1);
 
-    const purify = (str?: string) => str ? str.replace(/[^a-zA-Z0-9]/g, '') : '';
+    // SAFEST PURIFIER: Removes hidden newlines and spaces, but keeps special characters safe
+    const cleanStr = (str?: string) => str ? str.trim().replace(/[\r\n\s]+/g, '') : '';
     
-    const consumerKey = purify(process.env.MPESA_CONSUMER_KEY);
-    const consumerSecret = purify(process.env.MPESA_CONSUMER_SECRET);
-    const passkey = purify(process.env.MPESA_PASSKEY);
-    const shortcode = purify(process.env.MPESA_SHORTCODE) || '174379';
+    const consumerKey = cleanStr(process.env.MPESA_CONSUMER_KEY);
+    const consumerSecret = cleanStr(process.env.MPESA_CONSUMER_SECRET);
+    const passkey = cleanStr(process.env.MPESA_PASSKEY);
+    const shortcode = cleanStr(process.env.MPESA_SHORTCODE) || '174379';
     const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/mpesa/callback`;
 
     if (!consumerKey || !consumerSecret || !passkey) {
@@ -31,18 +33,14 @@ export async function POST(req: NextRequest) {
 
     // 1. Authenticate with Safaricom (OAuth)
     const authString = `${consumerKey}:${consumerSecret}`;
-    // Using native Web API btoa to prevent Node Buffer corruption on Vercel
-    const authBase64 = btoa(authString); 
+    // Explicit utf-8 buffer prevents Base64 corruption
+    const authBase64 = Buffer.from(authString, 'utf-8').toString('base64'); 
     
-    // ANTI-WAF REQUEST: Spoofing Postman to bypass Safaricom API Gateway Drops
     const tokenResponse = await fetch('https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials', {
       method: 'GET',
       headers: { 
         'Authorization': `Basic ${authBase64}`,
-        'Accept': '*/*',
-        'User-Agent': 'PostmanRuntime/7.36.1',
-        'Connection': 'keep-alive',
-        'Accept-Encoding': 'gzip, deflate, br'
+        'Accept': 'application/json'
       },
       cache: 'no-store'
     });
@@ -51,8 +49,9 @@ export async function POST(req: NextRequest) {
     const tokenText = await tokenResponse.text();
 
     if (!tokenResponse.ok) {
+        // UNIQUE IDENTIFIER: If you do not see "SYSTEM OVERRIDE" on your screen, Vercel did not deploy the code.
         return NextResponse.json({ 
-            error: `Daraja API Gateway Blocked (${tokenStatus}). Raw: ${tokenText || "Empty Gateway Drop"}` 
+            error: `SYSTEM OVERRIDE: Gateway Blocked (${tokenStatus}). Raw: ${tokenText || "Empty"}. KeyLength: ${consumerKey.length}` 
         }, { status: 502 });
     }
 
@@ -60,33 +59,23 @@ export async function POST(req: NextRequest) {
     try {
         tokenData = JSON.parse(tokenText);
     } catch (e) {
-        return NextResponse.json({ error: `Invalid OAuth JSON (${tokenStatus}). Raw: ${tokenText}` }, { status: 502 });
+        return NextResponse.json({ error: `SYSTEM OVERRIDE: Invalid OAuth JSON (${tokenStatus}). Raw: ${tokenText}` }, { status: 502 });
     }
 
     if (!tokenData.access_token) {
       return NextResponse.json({ error: "Safaricom authorized the request but returned no token." }, { status: 502 });
     }
 
-    // 2. Generate Cryptographic Passwords
-    const date = new Date();
-    const timestamp = date.getFullYear().toString() + 
-      (date.getMonth() + 1).toString().padStart(2, '0') + 
-      date.getDate().toString().padStart(2, '0') + 
-      date.getHours().toString().padStart(2, '0') + 
-      date.getMinutes().toString().padStart(2, '0') + 
-      date.getSeconds().toString().padStart(2, '0');
-      
-    const password = btoa(`${shortcode}${passkey}${timestamp}`);
+    // 2. Generate Cryptographic Passwords safely
+    const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+    const password = Buffer.from(`${shortcode}${passkey}${timestamp}`, 'utf-8').toString('base64');
 
     // 3. Dispatch STK Push to User Device
     const stkResponse = await fetch('https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${tokenData.access_token}`,
-        'Content-Type': 'application/json',
-        'Accept': '*/*',
-        'User-Agent': 'PostmanRuntime/7.36.1',
-        'Connection': 'keep-alive'
+        'Content-Type': 'application/json'
       },
       cache: 'no-store',
       body: JSON.stringify({
@@ -99,8 +88,8 @@ export async function POST(req: NextRequest) {
         PartyB: shortcode,
         PhoneNumber: formattedPhone,
         CallBackURL: callbackUrl,
-        AccountReference: userId || "AI_BOS_GUEST",
-        TransactionDesc: "AI-BOS Upgrade"
+        AccountReference: userId || "AIBOS",
+        TransactionDesc: "Upgrade"
       })
     });
 
@@ -108,14 +97,14 @@ export async function POST(req: NextRequest) {
     const stkText = await stkResponse.text();
 
     if (!stkResponse.ok) {
-        return NextResponse.json({ error: `Safaricom STK Gateway Blocked (${stkStatus}). Raw: ${stkText || "Empty"}` }, { status: 502 });
+        return NextResponse.json({ error: `SYSTEM OVERRIDE: STK Request Blocked (${stkStatus}). Raw: ${stkText || "Empty"}` }, { status: 502 });
     }
 
     let stkData;
     try {
         stkData = JSON.parse(stkText);
     } catch (e) {
-        return NextResponse.json({ error: `STK JSON Parse Error (${stkStatus}). Raw: ${stkText}` }, { status: 502 });
+        return NextResponse.json({ error: `SYSTEM OVERRIDE: STK JSON Parse Error (${stkStatus}). Raw: ${stkText}` }, { status: 502 });
     }
 
     if (stkData.errorMessage || stkData.ResponseCode !== "0") {
@@ -125,6 +114,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, message: "STK Push successfully deployed." });
 
   } catch (err: any) {
-    return NextResponse.json({ error: `Server Backend Exception: ${err.message}` }, { status: 500 });
+    return NextResponse.json({ error: `Backend Exception: ${err.message}` }, { status: 500 });
   }
 }
