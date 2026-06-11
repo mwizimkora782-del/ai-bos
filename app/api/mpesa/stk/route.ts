@@ -1,35 +1,32 @@
-// NUCLEAR CACHE OVERRIDES: Physically forces Vercel to bypass all edge caching
 export const dynamic = 'force-dynamic';
-export const fetchCache = 'force-no-store';
-export const revalidate = 0;
 
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { phone, userId } = body;
+    const phone = body.phone || '';
+    const userId = body.userId || 'GUEST';
 
     if (!phone) {
-        return NextResponse.json({ error: "Phone number payload missing." }, { status: 400 });
+        return NextResponse.json({ error: "OMEGA: Phone number missing." }, { status: 400 });
     }
 
     let formattedPhone = phone.replace(/[^0-9]/g, '');
     if (formattedPhone.startsWith('0')) formattedPhone = '254' + formattedPhone.substring(1);
     if (formattedPhone.startsWith('+')) formattedPhone = formattedPhone.substring(1);
 
-    // THE ULTIMATE PURIFIER: Daraja keys are strictly alphanumeric. 
-    // This physically vaporizes hidden unicode, zero-width spaces, and clipboard artifacts.
-    const purify = (str?: string) => str ? str.replace(/[^a-zA-Z0-9]/g, '') : '';
+    // Safest cleanup: removes all invisible line breaks and spaces
+    const cleanStr = (str?: string) => str ? str.replace(/[\s\r\n]+/g, '') : '';
     
-    const consumerKey = purify(process.env.MPESA_CONSUMER_KEY);
-    const consumerSecret = purify(process.env.MPESA_CONSUMER_SECRET);
-    const passkey = purify(process.env.MPESA_PASSKEY);
-    const shortcode = purify(process.env.MPESA_SHORTCODE) || '174379';
+    const consumerKey = cleanStr(process.env.MPESA_CONSUMER_KEY);
+    const consumerSecret = cleanStr(process.env.MPESA_CONSUMER_SECRET);
+    const passkey = cleanStr(process.env.MPESA_PASSKEY);
+    const shortcode = cleanStr(process.env.MPESA_SHORTCODE) || '174379';
     const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/mpesa/callback`;
 
     if (!consumerKey || !consumerSecret || !passkey) {
-      return NextResponse.json({ error: "Configuration Error: Safaricom credentials missing in Vercel Vault." }, { status: 500 });
+      return NextResponse.json({ error: "OMEGA: Safaricom credentials missing in Vercel Vault." }, { status: 500 });
     }
 
     // 1. Authenticate with Safaricom (OAuth)
@@ -40,19 +37,16 @@ export async function POST(req: NextRequest) {
       method: 'GET',
       headers: { 
         'Authorization': `Basic ${authBase64}`,
-        'Accept': 'application/json',
-        'User-Agent': 'PostmanRuntime/7.36.1' // WAF Bypass
+        'Accept': 'application/json'
       },
       cache: 'no-store'
     });
     
-    const tokenStatus = tokenResponse.status;
     const tokenText = await tokenResponse.text();
 
     if (!tokenResponse.ok) {
-        // DIAGNOSTIC ALFA: Verifies the exact length of BOTH keys after strict purification
         return NextResponse.json({ 
-            error: `DIAGNOSTIC ALFA: Gateway Blocked (${tokenStatus}). Key: ${consumerKey.length} Secret: ${consumerSecret.length}. Raw: ${tokenText || "Empty"}` 
+            error: `OMEGA: Daraja Auth Blocked (${tokenResponse.status}). Raw: ${tokenText || "Empty"}` 
         }, { status: 502 });
     }
 
@@ -60,14 +54,14 @@ export async function POST(req: NextRequest) {
     try {
         tokenData = JSON.parse(tokenText);
     } catch (e) {
-        return NextResponse.json({ error: `DIAGNOSTIC ALFA: Invalid OAuth JSON (${tokenStatus}). Raw: ${tokenText}` }, { status: 502 });
+        return NextResponse.json({ error: `OMEGA: Invalid JSON (${tokenResponse.status}). Raw: ${tokenText}` }, { status: 502 });
     }
 
     if (!tokenData.access_token) {
-      return NextResponse.json({ error: "Safaricom authorized the request but returned no token." }, { status: 502 });
+      return NextResponse.json({ error: "OMEGA: Safaricom returned no token." }, { status: 502 });
     }
 
-    // 2. Generate Cryptographic Passwords safely
+    // 2. Generate Cryptographic Passwords
     const date = new Date();
     const timestamp = date.getFullYear().toString() + 
       (date.getMonth() + 1).toString().padStart(2, '0') + 
@@ -75,10 +69,10 @@ export async function POST(req: NextRequest) {
       date.getHours().toString().padStart(2, '0') + 
       date.getMinutes().toString().padStart(2, '0') + 
       date.getSeconds().toString().padStart(2, '0');
-
+      
     const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString('base64');
 
-    // 3. Dispatch STK Push to User Device
+    // 3. Dispatch STK Push
     const stkResponse = await fetch('https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest', {
       method: 'POST',
       headers: {
@@ -96,33 +90,32 @@ export async function POST(req: NextRequest) {
         PartyB: shortcode,
         PhoneNumber: formattedPhone,
         CallBackURL: callbackUrl,
-        AccountReference: userId || "AIBOS",
-        TransactionDesc: "Upgrade"
+        AccountReference: userId,
+        TransactionDesc: "AI-BOS Upgrade"
       })
     });
 
-    const stkStatus = stkResponse.status;
     const stkText = await stkResponse.text();
 
     if (!stkResponse.ok) {
-        return NextResponse.json({ error: `DIAGNOSTIC ALFA: STK Request Blocked (${stkStatus}). Raw: ${stkText || "Empty"}` }, { status: 502 });
+        return NextResponse.json({ error: `OMEGA: STK Push Blocked (${stkResponse.status}). Raw: ${stkText || "Empty"}` }, { status: 502 });
     }
 
     let stkData;
     try {
         stkData = JSON.parse(stkText);
     } catch (e) {
-        return NextResponse.json({ error: `DIAGNOSTIC ALFA: STK JSON Parse Error (${stkStatus}). Raw: ${stkText}` }, { status: 502 });
+        return NextResponse.json({ error: `OMEGA: STK JSON Error (${stkResponse.status}). Raw: ${stkText}` }, { status: 502 });
     }
 
-    if (stkData.errorMessage || stkData.ResponseCode !== "0") {
-      return NextResponse.json({ error: `Safaricom Execution Error: ${stkData.errorMessage || stkData.ResponseDescription}` }, { status: 502 });
+    if (stkData.errorMessage) {
+      return NextResponse.json({ error: `OMEGA: Safaricom Error: ${stkData.errorMessage}` }, { status: 502 });
     }
 
     return NextResponse.json({ success: true, message: "STK Push successfully deployed." });
 
   } catch (err: any) {
-    return NextResponse.json({ error: `Backend Exception: ${err.message}` }, { status: 500 });
+    return NextResponse.json({ error: `OMEGA: System Exception: ${err.message}` }, { status: 500 });
   }
-        }
-        
+          }
+                               
