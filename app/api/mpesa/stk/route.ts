@@ -9,32 +9,36 @@ export async function POST(req: NextRequest) {
     if (formattedPhone.startsWith('0')) formattedPhone = '254' + formattedPhone.substring(1);
     if (formattedPhone.startsWith('+')) formattedPhone = formattedPhone.substring(1);
 
-    const consumerKey = process.env.MPESA_CONSUMER_KEY;
-    const consumerSecret = process.env.MPESA_CONSUMER_SECRET;
-    const passkey = process.env.MPESA_PASSKEY;
-    const shortcode = process.env.MPESA_SHORTCODE || '174379';
+    // .trim() removes any accidental spaces copied from the mobile phone
+    const consumerKey = process.env.MPESA_CONSUMER_KEY?.trim();
+    const consumerSecret = process.env.MPESA_CONSUMER_SECRET?.trim();
+    const passkey = process.env.MPESA_PASSKEY?.trim();
+    const shortcode = process.env.MPESA_SHORTCODE?.trim() || '174379';
     const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/mpesa/callback`;
 
-    // PROFESSIONAL DIAGNOSTIC: Pinpoint the exact missing key
-    let missingKeys = [];
-    if (!consumerKey) missingKeys.push('MPESA_CONSUMER_KEY');
-    if (!consumerSecret) missingKeys.push('MPESA_CONSUMER_SECRET');
-    if (!passkey) missingKeys.push('MPESA_PASSKEY');
-
-    if (missingKeys.length > 0) {
-      return NextResponse.json({ 
-        error: `Vercel Vault Error: You are missing ${missingKeys.join(' AND ')}` 
-      }, { status: 500 });
+    if (!consumerKey || !consumerSecret || !passkey) {
+      return NextResponse.json({ error: "Vercel Vault Error: Keys are missing." }, { status: 500 });
     }
 
+    // 1. Safaricom OAuth with Error Catching
     const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
     const tokenResponse = await fetch('https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials', {
       headers: { Authorization: `Basic ${auth}` }
     });
     
-    const tokenData = await tokenResponse.json();
-    if (!tokenData.access_token) throw new Error("Safaricom rejected your Consumer Key or Secret. Double check them in Vercel.");
+    const tokenText = await tokenResponse.text();
+    let tokenData;
+    try {
+      tokenData = JSON.parse(tokenText);
+    } catch (e) {
+      return NextResponse.json({ error: `Safaricom OAuth Crash: ${tokenText}` }, { status: 502 });
+    }
 
+    if (!tokenData.access_token) {
+      return NextResponse.json({ error: `Safaricom rejected credentials. Raw: ${tokenText}` }, { status: 502 });
+    }
+
+    // 2. Security Passwords
     const date = new Date();
     const timestamp = date.getFullYear().toString() + 
       (date.getMonth() + 1).toString().padStart(2, '0') + 
@@ -45,6 +49,7 @@ export async function POST(req: NextRequest) {
       
     const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString('base64');
 
+    // 3. STK Push with Error Catching
     const stkResponse = await fetch('https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest', {
       method: 'POST',
       headers: {
@@ -66,11 +71,21 @@ export async function POST(req: NextRequest) {
       })
     });
 
-    const stkData = await stkResponse.json();
-    if (stkData.errorMessage) throw new Error(`Safaricom Error: ${stkData.errorMessage}`);
+    const stkText = await stkResponse.text();
+    let stkData;
+    try {
+      stkData = JSON.parse(stkText);
+    } catch (e) {
+      return NextResponse.json({ error: `Safaricom STK Crash: ${stkText}` }, { status: 502 });
+    }
 
-    return NextResponse.json({ success: true, message: "STK Push sent. Please check your phone to enter M-Pesa PIN." });
+    if (stkData.errorMessage) {
+      return NextResponse.json({ error: `Safaricom Error: ${stkData.errorMessage}` }, { status: 502 });
+    }
+
+    return NextResponse.json({ success: true, message: "STK Push sent." });
+
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: `Server Exception: ${err.message}` }, { status: 500 });
   }
 }
