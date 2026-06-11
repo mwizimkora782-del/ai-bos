@@ -3,34 +3,38 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { phone, userId } = body; // userId is passed so we know who is paying
+    const { phone, userId } = body;
 
-    // Format phone number to 254 format safely
     let formattedPhone = phone.replace(/[^0-9]/g, '');
     if (formattedPhone.startsWith('0')) formattedPhone = '254' + formattedPhone.substring(1);
     if (formattedPhone.startsWith('+')) formattedPhone = formattedPhone.substring(1);
 
-    // Environment Variables (You will add these to Vercel later)
     const consumerKey = process.env.MPESA_CONSUMER_KEY;
     const consumerSecret = process.env.MPESA_CONSUMER_SECRET;
     const passkey = process.env.MPESA_PASSKEY;
-    const shortcode = process.env.MPESA_SHORTCODE || '174379'; // Default Daraja Sandbox Till
+    const shortcode = process.env.MPESA_SHORTCODE || '174379';
     const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/mpesa/callback`;
 
-    if (!consumerKey || !consumerSecret || !passkey) {
-      return NextResponse.json({ error: "Safaricom Daraja credentials missing in Vercel." }, { status: 500 });
+    // PROFESSIONAL DIAGNOSTIC: Pinpoint the exact missing key
+    let missingKeys = [];
+    if (!consumerKey) missingKeys.push('MPESA_CONSUMER_KEY');
+    if (!consumerSecret) missingKeys.push('MPESA_CONSUMER_SECRET');
+    if (!passkey) missingKeys.push('MPESA_PASSKEY');
+
+    if (missingKeys.length > 0) {
+      return NextResponse.json({ 
+        error: `Vercel Vault Error: You are missing ${missingKeys.join(' AND ')}` 
+      }, { status: 500 });
     }
 
-    // 1. Generate M-Pesa OAuth Token
     const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
     const tokenResponse = await fetch('https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials', {
       headers: { Authorization: `Basic ${auth}` }
     });
     
     const tokenData = await tokenResponse.json();
-    if (!tokenData.access_token) throw new Error("Failed to authenticate with Safaricom.");
+    if (!tokenData.access_token) throw new Error("Safaricom rejected your Consumer Key or Secret. Double check them in Vercel.");
 
-    // 2. Generate Security Passwords & Timestamps
     const date = new Date();
     const timestamp = date.getFullYear().toString() + 
       (date.getMonth() + 1).toString().padStart(2, '0') + 
@@ -41,7 +45,6 @@ export async function POST(req: NextRequest) {
       
     const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString('base64');
 
-    // 3. Trigger the STK Push
     const stkResponse = await fetch('https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest', {
       method: 'POST',
       headers: {
@@ -53,21 +56,21 @@ export async function POST(req: NextRequest) {
         Password: password,
         Timestamp: timestamp,
         TransactionType: "CustomerPayBillOnline",
-        Amount: 1, // $49 equivalent in KES (Set to 1 for testing)
+        Amount: 1, 
         PartyA: formattedPhone,
         PartyB: shortcode,
         PhoneNumber: formattedPhone,
         CallBackURL: callbackUrl,
-        AccountReference: userId, // CRITICAL: We pass the Supabase User ID here to identify them in the webhook
+        AccountReference: userId || "AI_BOS_GUEST",
         TransactionDesc: "AI-BOS Professional Upgrade"
       })
     });
 
     const stkData = await stkResponse.json();
-    if (stkData.errorMessage) throw new Error(stkData.errorMessage);
+    if (stkData.errorMessage) throw new Error(`Safaricom Error: ${stkData.errorMessage}`);
 
     return NextResponse.json({ success: true, message: "STK Push sent. Please check your phone to enter M-Pesa PIN." });
   } catch (err: any) {
-    return NextResponse.json({ error: `M-Pesa Trigger Failed: ${err.message}` }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
