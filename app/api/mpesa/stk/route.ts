@@ -1,5 +1,4 @@
-// PROFESSIONAL OVERRIDE: Prevent Vercel edge caching of API responses
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic'; // Nuclear edge-cache override
 
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -12,13 +11,12 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Phone number payload missing." }, { status: 400 });
     }
 
-    // Standardize phone format to Safaricom requirement (254XXXXXXXXX)
     let formattedPhone = phone.replace(/[^0-9]/g, '');
     if (formattedPhone.startsWith('0')) formattedPhone = '254' + formattedPhone.substring(1);
     if (formattedPhone.startsWith('+')) formattedPhone = formattedPhone.substring(1);
 
-    // Deep clean whitespace/newlines only. Preserves special chars if they exist.
-    const cleanStr = (str?: string) => str ? str.replace(/\s+/g, '') : '';
+    // Deep clean: removes accidental spaces, newlines, and tabs from mobile copy/pasting
+    const cleanStr = (str?: string) => str ? str.replace(/[\s\n\r\t]+/g, '') : '';
     
     const consumerKey = cleanStr(process.env.MPESA_CONSUMER_KEY);
     const consumerSecret = cleanStr(process.env.MPESA_CONSUMER_SECRET);
@@ -38,23 +36,29 @@ export async function POST(req: NextRequest) {
       method: 'GET',
       headers: { 
         'Authorization': `Basic ${authBase64}`,
-        'Accept': 'application/json' // Crucial: Prevents Daraja 400 Bad Request drops
+        'Accept': 'application/json' // Bypasses Daraja WAF 400 drops
       },
       cache: 'no-store'
     });
     
+    const tokenStatus = tokenResponse.status;
+    const tokenText = await tokenResponse.text();
+
     if (!tokenResponse.ok) {
-        const errorText = await tokenResponse.text();
-        // 401 = Invalid Keys. 400 = Malformed Header.
         return NextResponse.json({ 
-            error: `Safaricom OAuth Failed (${tokenResponse.status}). Response: ${errorText || "Empty Gateway Drop"}` 
+            error: `Safaricom OAuth Blocked (${tokenStatus}). Body: ${tokenText || "Empty Gateway Drop"}` 
         }, { status: 502 });
     }
 
-    const tokenData = await tokenResponse.json();
+    let tokenData;
+    try {
+        tokenData = JSON.parse(tokenText);
+    } catch (e) {
+        return NextResponse.json({ error: `Invalid OAuth JSON (${tokenStatus}). Body: ${tokenText}` }, { status: 502 });
+    }
 
     if (!tokenData.access_token) {
-      return NextResponse.json({ error: "Safaricom authorized the request but failed to issue a token." }, { status: 502 });
+      return NextResponse.json({ error: "Safaricom authorized the request but returned no token." }, { status: 502 });
     }
 
     // 2. Generate Cryptographic Passwords
@@ -82,7 +86,7 @@ export async function POST(req: NextRequest) {
         Password: password,
         Timestamp: timestamp,
         TransactionType: "CustomerPayBillOnline",
-        Amount: 1, // KES 1 for Sandbox Testing
+        Amount: 1, 
         PartyA: formattedPhone,
         PartyB: shortcode,
         PhoneNumber: formattedPhone,
@@ -92,12 +96,19 @@ export async function POST(req: NextRequest) {
       })
     });
 
+    const stkStatus = stkResponse.status;
+    const stkText = await stkResponse.text();
+
     if (!stkResponse.ok) {
-        const stkErrorText = await stkResponse.text();
-        return NextResponse.json({ error: `Safaricom STK Blocked (${stkResponse.status}). Raw: ${stkErrorText}` }, { status: 502 });
+        return NextResponse.json({ error: `Safaricom STK Blocked (${stkStatus}). Body: ${stkText || "Empty"}` }, { status: 502 });
     }
 
-    const stkData = await stkResponse.json();
+    let stkData;
+    try {
+        stkData = JSON.parse(stkText);
+    } catch (e) {
+        return NextResponse.json({ error: `STK JSON Parse Error (${stkStatus}). Body: ${stkText}` }, { status: 502 });
+    }
 
     if (stkData.errorMessage || stkData.ResponseCode !== "0") {
       return NextResponse.json({ error: `Safaricom Execution Error: ${stkData.errorMessage || stkData.ResponseDescription}` }, { status: 502 });
