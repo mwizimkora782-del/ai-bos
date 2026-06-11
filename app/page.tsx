@@ -148,7 +148,8 @@ export default function Dashboard() {
             </div>
             <h2 className="text-xl font-bold text-white mb-2">Compute Limit Reached</h2>
             <p className="text-neutral-400 mb-6 text-sm">You have exhausted your free tier execution cycles. Upgrade to the Professional Plan to unlock unlimited AI workforce access.</p>
-            <button className="w-full bg-white text-black font-semibold py-3 rounded-xl hover:bg-neutral-200 transition">
+            {/* UPDATED BUTTON ROUTING HERE */}
+            <button onClick={() => router.push('/billing')} className="w-full bg-white text-black font-semibold py-3 rounded-xl hover:bg-neutral-200 transition">
               Upgrade to Pro - $49/mo
             </button>
             <button onClick={handleLogout} className="w-full mt-3 text-neutral-500 text-xs hover:text-white transition">
@@ -183,10 +184,10 @@ export default function Dashboard() {
           <div className="flex flex-col gap-2 border-t border-neutral-900 pt-4">
             <div className="flex items-center justify-between text-xs text-neutral-500">
               <span className="flex items-center gap-1.5"><Activity size={12} className="text-emerald-500" /> Free Tier</span>
-              <span>{FREE_LIMIT - userInteractionCount} credits left</span>
+              <span>{Math.max(0, FREE_LIMIT - userInteractionCount)} credits left</span>
             </div>
             <div className="w-full bg-neutral-900 rounded-full h-1.5">
-              <div className="bg-emerald-500 h-1.5 rounded-full transition-all" style={{ width: `${(userInteractionCount / FREE_LIMIT) * 100}%` }}></div>
+              <div className="bg-emerald-500 h-1.5 rounded-full transition-all" style={{ width: `${Math.min(100, (userInteractionCount / FREE_LIMIT) * 100)}%` }}></div>
             </div>
           </div>
         </div>
@@ -269,5 +270,5 @@ export default function Dashboard() {
       </main>
     </div>
   );
-              }
-            
+    }
+                                       
