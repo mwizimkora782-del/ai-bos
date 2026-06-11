@@ -1,3 +1,4 @@
+// PROFESSIONAL OVERRIDE: Prevent Vercel edge caching of API responses
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -7,12 +8,17 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { phone, userId } = body;
 
+    if (!phone) {
+        return NextResponse.json({ error: "Phone number payload missing." }, { status: 400 });
+    }
+
+    // Standardize phone format to Safaricom requirement (254XXXXXXXXX)
     let formattedPhone = phone.replace(/[^0-9]/g, '');
     if (formattedPhone.startsWith('0')) formattedPhone = '254' + formattedPhone.substring(1);
     if (formattedPhone.startsWith('+')) formattedPhone = formattedPhone.substring(1);
 
-    // Removes accidental line breaks or spaces from copying
-    const cleanStr = (str: string | undefined) => str ? str.replace(/[\s\n\r\t]+/g, '') : '';
+    // Deep clean whitespace/newlines only. Preserves special chars if they exist.
+    const cleanStr = (str?: string) => str ? str.replace(/\s+/g, '') : '';
     
     const consumerKey = cleanStr(process.env.MPESA_CONSUMER_KEY);
     const consumerSecret = cleanStr(process.env.MPESA_CONSUMER_SECRET);
@@ -21,10 +27,10 @@ export async function POST(req: NextRequest) {
     const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/mpesa/callback`;
 
     if (!consumerKey || !consumerSecret || !passkey) {
-      return NextResponse.json({ error: "Configuration Error: System keys are missing." }, { status: 500 });
+      return NextResponse.json({ error: "Configuration Error: Safaricom credentials missing in Vercel Vault." }, { status: 500 });
     }
 
-    // 1. Safaricom OAuth
+    // 1. Authenticate with Safaricom (OAuth)
     const authString = `${consumerKey}:${consumerSecret}`;
     const authBase64 = Buffer.from(authString).toString('base64');
     
@@ -32,22 +38,26 @@ export async function POST(req: NextRequest) {
       method: 'GET',
       headers: { 
         'Authorization': `Basic ${authBase64}`,
-        'User-Agent': 'AI-BOS-Server/1.0'
+        'Accept': 'application/json' // Crucial: Prevents Daraja 400 Bad Request drops
       },
       cache: 'no-store'
     });
     
     if (!tokenResponse.ok) {
-        return NextResponse.json({ error: "Safaricom rejected the API keys. Please verify your Consumer Key and Secret are the correct length." }, { status: 502 });
+        const errorText = await tokenResponse.text();
+        // 401 = Invalid Keys. 400 = Malformed Header.
+        return NextResponse.json({ 
+            error: `Safaricom OAuth Failed (${tokenResponse.status}). Response: ${errorText || "Empty Gateway Drop"}` 
+        }, { status: 502 });
     }
 
     const tokenData = await tokenResponse.json();
 
     if (!tokenData.access_token) {
-      return NextResponse.json({ error: "Safaricom failed to return an access token." }, { status: 502 });
+      return NextResponse.json({ error: "Safaricom authorized the request but failed to issue a token." }, { status: 502 });
     }
 
-    // 2. Security Passwords
+    // 2. Generate Cryptographic Passwords
     const date = new Date();
     const timestamp = date.getFullYear().toString() + 
       (date.getMonth() + 1).toString().padStart(2, '0') + 
@@ -58,13 +68,13 @@ export async function POST(req: NextRequest) {
       
     const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString('base64');
 
-    // 3. STK Push
+    // 3. Dispatch STK Push to User Device
     const stkResponse = await fetch('https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${tokenData.access_token}`,
         'Content-Type': 'application/json',
-        'User-Agent': 'AI-BOS-Server/1.0'
+        'Accept': 'application/json'
       },
       cache: 'no-store',
       body: JSON.stringify({
@@ -72,7 +82,7 @@ export async function POST(req: NextRequest) {
         Password: password,
         Timestamp: timestamp,
         TransactionType: "CustomerPayBillOnline",
-        Amount: 1, 
+        Amount: 1, // KES 1 for Sandbox Testing
         PartyA: formattedPhone,
         PartyB: shortcode,
         PhoneNumber: formattedPhone,
@@ -83,18 +93,19 @@ export async function POST(req: NextRequest) {
     });
 
     if (!stkResponse.ok) {
-        return NextResponse.json({ error: `Safaricom STK Blocked. Ensure your phone number is registered in the Daraja Sandbox.` }, { status: 502 });
+        const stkErrorText = await stkResponse.text();
+        return NextResponse.json({ error: `Safaricom STK Blocked (${stkResponse.status}). Raw: ${stkErrorText}` }, { status: 502 });
     }
 
     const stkData = await stkResponse.json();
 
-    if (stkData.errorMessage) {
-      return NextResponse.json({ error: `Safaricom Error: ${stkData.errorMessage}` }, { status: 502 });
+    if (stkData.errorMessage || stkData.ResponseCode !== "0") {
+      return NextResponse.json({ error: `Safaricom Execution Error: ${stkData.errorMessage || stkData.ResponseDescription}` }, { status: 502 });
     }
 
-    return NextResponse.json({ success: true, message: "STK Push sent." });
+    return NextResponse.json({ success: true, message: "STK Push successfully deployed." });
 
   } catch (err: any) {
-    return NextResponse.json({ error: `Server Exception: ${err.message}` }, { status: 500 });
+    return NextResponse.json({ error: `Server Backend Exception: ${err.message}` }, { status: 500 });
   }
-}
+      }
