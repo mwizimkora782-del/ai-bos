@@ -15,13 +15,14 @@ export async function POST(req: NextRequest) {
     if (formattedPhone.startsWith('0')) formattedPhone = '254' + formattedPhone.substring(1);
     if (formattedPhone.startsWith('+')) formattedPhone = formattedPhone.substring(1);
 
-    // Deep clean: removes accidental spaces, newlines, and tabs from mobile copy/pasting
-    const cleanStr = (str?: string) => str ? str.replace(/[\s\n\r\t]+/g, '') : '';
+    // PROFESSIONAL OVERRIDE: Aggressive Alphanumeric Purifier
+    // This strictly eradicates zero-width characters and mobile clipboard artifacts.
+    const purify = (str?: string) => str ? str.replace(/[^a-zA-Z0-9]/g, '') : '';
     
-    const consumerKey = cleanStr(process.env.MPESA_CONSUMER_KEY);
-    const consumerSecret = cleanStr(process.env.MPESA_CONSUMER_SECRET);
-    const passkey = cleanStr(process.env.MPESA_PASSKEY);
-    const shortcode = cleanStr(process.env.MPESA_SHORTCODE) || '174379';
+    const consumerKey = purify(process.env.MPESA_CONSUMER_KEY);
+    const consumerSecret = purify(process.env.MPESA_CONSUMER_SECRET);
+    const passkey = purify(process.env.MPESA_PASSKEY);
+    const shortcode = purify(process.env.MPESA_SHORTCODE) || '174379';
     const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/mpesa/callback`;
 
     if (!consumerKey || !consumerSecret || !passkey) {
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest) {
       method: 'GET',
       headers: { 
         'Authorization': `Basic ${authBase64}`,
-        'Accept': 'application/json' // Bypasses Daraja WAF 400 drops
+        'Accept': 'application/json'
       },
       cache: 'no-store'
     });
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
 
     if (!tokenResponse.ok) {
         return NextResponse.json({ 
-            error: `Safaricom OAuth Blocked (${tokenStatus}). Body: ${tokenText || "Empty Gateway Drop"}` 
+            error: `Safaricom OAuth Blocked (${tokenStatus}). Raw: ${tokenText || "Empty Gateway Drop"}. Key length: ${consumerKey.length}` 
         }, { status: 502 });
     }
 
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
     try {
         tokenData = JSON.parse(tokenText);
     } catch (e) {
-        return NextResponse.json({ error: `Invalid OAuth JSON (${tokenStatus}). Body: ${tokenText}` }, { status: 502 });
+        return NextResponse.json({ error: `Invalid OAuth JSON (${tokenStatus}). Raw: ${tokenText}` }, { status: 502 });
     }
 
     if (!tokenData.access_token) {
@@ -100,14 +101,14 @@ export async function POST(req: NextRequest) {
     const stkText = await stkResponse.text();
 
     if (!stkResponse.ok) {
-        return NextResponse.json({ error: `Safaricom STK Blocked (${stkStatus}). Body: ${stkText || "Empty"}` }, { status: 502 });
+        return NextResponse.json({ error: `Safaricom STK Blocked (${stkStatus}). Raw: ${stkText || "Empty"}` }, { status: 502 });
     }
 
     let stkData;
     try {
         stkData = JSON.parse(stkText);
     } catch (e) {
-        return NextResponse.json({ error: `STK JSON Parse Error (${stkStatus}). Body: ${stkText}` }, { status: 502 });
+        return NextResponse.json({ error: `STK JSON Parse Error (${stkStatus}). Raw: ${stkText}` }, { status: 502 });
     }
 
     if (stkData.errorMessage || stkData.ResponseCode !== "0") {
@@ -119,4 +120,4 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json({ error: `Server Backend Exception: ${err.message}` }, { status: 500 });
   }
-      }
+}
