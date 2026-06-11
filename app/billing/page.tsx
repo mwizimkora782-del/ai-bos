@@ -39,13 +39,19 @@ export default function Billing() {
         body: JSON.stringify({ phone, userId })
       });
       
-      const data = await response.json();
+      // Professional Parse: Read raw text first to prevent JSON crash
+      const rawText = await response.text();
+      let data;
+      try {
+        data = JSON.parse(rawText);
+      } catch (parseError) {
+        throw new Error(`Vercel Server Failure: Backend returned invalid data. Please ensure Redeployment is complete.`);
+      }
       
       if (!response.ok) throw new Error(data.error || "Transaction failed");
       
       setStatus('STK Push sent! Please check your phone and enter your M-Pesa PIN.');
       
-      // Auto-check for upgrade completion every 3 seconds
       const checkUpgrade = setInterval(async () => {
         const { data: profile } = await supabase.from('profiles').select('is_pro').eq('id', userId).single();
         if (profile?.is_pro) {
@@ -126,4 +132,4 @@ export default function Billing() {
       </div>
     </div>
   );
-                }
+}
