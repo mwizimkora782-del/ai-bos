@@ -9,24 +9,24 @@ export async function POST(req: NextRequest) {
     const userId = body.userId || 'GUEST';
 
     if (!phone) {
-        return NextResponse.json({ error: "OMEGA: Phone number missing." }, { status: 400 });
+        return NextResponse.json({ error: "ZETA: Phone number missing." }, { status: 400 });
     }
 
     let formattedPhone = phone.replace(/[^0-9]/g, '');
     if (formattedPhone.startsWith('0')) formattedPhone = '254' + formattedPhone.substring(1);
     if (formattedPhone.startsWith('+')) formattedPhone = formattedPhone.substring(1);
 
-    // Safest cleanup: removes all invisible line breaks and spaces
-    const cleanStr = (str?: string) => str ? str.replace(/[\s\r\n]+/g, '') : '';
+    // STRICT ALPHANUMERIC PURIFIER: Destroys hidden quotes, spaces, and invisible symbols
+    const purify = (str?: string) => str ? str.replace(/[^a-zA-Z0-9]/g, '') : '';
     
-    const consumerKey = cleanStr(process.env.MPESA_CONSUMER_KEY);
-    const consumerSecret = cleanStr(process.env.MPESA_CONSUMER_SECRET);
-    const passkey = cleanStr(process.env.MPESA_PASSKEY);
-    const shortcode = cleanStr(process.env.MPESA_SHORTCODE) || '174379';
+    const consumerKey = purify(process.env.MPESA_CONSUMER_KEY);
+    const consumerSecret = purify(process.env.MPESA_CONSUMER_SECRET);
+    const passkey = purify(process.env.MPESA_PASSKEY);
+    const shortcode = purify(process.env.MPESA_SHORTCODE) || '174379';
     const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/mpesa/callback`;
 
     if (!consumerKey || !consumerSecret || !passkey) {
-      return NextResponse.json({ error: "OMEGA: Safaricom credentials missing in Vercel Vault." }, { status: 500 });
+      return NextResponse.json({ error: "ZETA: Safaricom credentials missing in Vercel Vault." }, { status: 500 });
     }
 
     // 1. Authenticate with Safaricom (OAuth)
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
 
     if (!tokenResponse.ok) {
         return NextResponse.json({ 
-            error: `OMEGA: Daraja Auth Blocked (${tokenResponse.status}). Raw: ${tokenText || "Empty"}` 
+            error: `ZETA: Daraja Auth Blocked (${tokenResponse.status}). Raw: ${tokenText || "Empty"}. Key Length: ${consumerKey.length}` 
         }, { status: 502 });
     }
 
@@ -54,11 +54,11 @@ export async function POST(req: NextRequest) {
     try {
         tokenData = JSON.parse(tokenText);
     } catch (e) {
-        return NextResponse.json({ error: `OMEGA: Invalid JSON (${tokenResponse.status}). Raw: ${tokenText}` }, { status: 502 });
+        return NextResponse.json({ error: `ZETA: Invalid JSON (${tokenResponse.status}). Raw: ${tokenText}` }, { status: 502 });
     }
 
     if (!tokenData.access_token) {
-      return NextResponse.json({ error: "OMEGA: Safaricom returned no token." }, { status: 502 });
+      return NextResponse.json({ error: "ZETA: Safaricom returned no token." }, { status: 502 });
     }
 
     // 2. Generate Cryptographic Passwords
@@ -98,24 +98,23 @@ export async function POST(req: NextRequest) {
     const stkText = await stkResponse.text();
 
     if (!stkResponse.ok) {
-        return NextResponse.json({ error: `OMEGA: STK Push Blocked (${stkResponse.status}). Raw: ${stkText || "Empty"}` }, { status: 502 });
+        return NextResponse.json({ error: `ZETA: STK Push Blocked (${stkResponse.status}). Raw: ${stkText || "Empty"}` }, { status: 502 });
     }
 
     let stkData;
     try {
         stkData = JSON.parse(stkText);
     } catch (e) {
-        return NextResponse.json({ error: `OMEGA: STK JSON Error (${stkResponse.status}). Raw: ${stkText}` }, { status: 502 });
+        return NextResponse.json({ error: `ZETA: STK JSON Error (${stkResponse.status}). Raw: ${stkText}` }, { status: 502 });
     }
 
     if (stkData.errorMessage) {
-      return NextResponse.json({ error: `OMEGA: Safaricom Error: ${stkData.errorMessage}` }, { status: 502 });
+      return NextResponse.json({ error: `ZETA: Safaricom Error: ${stkData.errorMessage}` }, { status: 502 });
     }
 
     return NextResponse.json({ success: true, message: "STK Push successfully deployed." });
 
   } catch (err: any) {
-    return NextResponse.json({ error: `OMEGA: System Exception: ${err.message}` }, { status: 500 });
+    return NextResponse.json({ error: `ZETA: System Exception: ${err.message}` }, { status: 500 });
   }
-          }
-                               
+}
