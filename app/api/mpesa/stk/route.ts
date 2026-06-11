@@ -1,5 +1,4 @@
-// PROFESSIONAL OVERRIDE: Force Vercel to never cache this file at the Edge
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic'; // Nuclear cache override
 
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -12,31 +11,28 @@ export async function POST(req: NextRequest) {
     if (formattedPhone.startsWith('0')) formattedPhone = '254' + formattedPhone.substring(1);
     if (formattedPhone.startsWith('+')) formattedPhone = formattedPhone.substring(1);
 
-    const cleanStr = (str: string | undefined) => str ? str.replace(/[\s\n\r\t]+/g, '') : '';
+    // PROFESSIONAL PURIFICATION: Destroys absolutely everything that is not a letter or number.
+    // This eradicates invisible mobile zero-width spaces that cause 400 errors.
+    const purify = (str: string | undefined) => str ? str.replace(/[^a-zA-Z0-9]/g, '') : '';
     
-    const consumerKey = cleanStr(process.env.MPESA_CONSUMER_KEY);
-    const consumerSecret = cleanStr(process.env.MPESA_CONSUMER_SECRET);
-    const passkey = cleanStr(process.env.MPESA_PASSKEY);
-    const shortcode = cleanStr(process.env.MPESA_SHORTCODE) || '174379';
+    const consumerKey = purify(process.env.MPESA_CONSUMER_KEY);
+    const consumerSecret = purify(process.env.MPESA_CONSUMER_SECRET);
+    const passkey = purify(process.env.MPESA_PASSKEY);
+    const shortcode = purify(process.env.MPESA_SHORTCODE) || '174379';
     const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/mpesa/callback`;
 
     if (!consumerKey || !consumerSecret || !passkey) {
-      return NextResponse.json({ error: "Vercel Vault Error: Keys are missing." }, { status: 500 });
+      return NextResponse.json({ error: "Vercel Vault Error: Keys are completely empty." }, { status: 500 });
     }
 
-    // FIREWALL CHECK: Did you accidentally copy the asterisks?
-    if (consumerKey.includes('*') || consumerSecret.includes('*')) {
-      return NextResponse.json({ error: "CRITICAL: Your Vercel keys contain asterisks (*). Reveal them in Daraja before copying." }, { status: 500 });
-    }
-
-    // 1. Safaricom OAuth with Firewall Bypass
-    const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+    // 1. Safaricom OAuth
+    const authString = `${consumerKey}:${consumerSecret}`;
+    const authBase64 = Buffer.from(authString).toString('base64');
+    
     const tokenResponse = await fetch('https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials', {
       method: 'GET',
       headers: { 
-        'Authorization': `Basic ${auth}`,
-        'Cache-Control': 'no-cache',
-        'User-Agent': 'AI-BOS-Server/1.0' // Bypasses aggressive WAF blocks
+        'Authorization': `Basic ${authBase64}`
       },
       cache: 'no-store'
     });
@@ -45,18 +41,16 @@ export async function POST(req: NextRequest) {
     const tokenText = await tokenResponse.text();
     
     if (!tokenResponse.ok) {
-        return NextResponse.json({ error: `Safaricom OAuth Blocked. Status Code: ${tokenStatus}. Raw: ${tokenText || "Empty"}` }, { status: 502 });
+        // DIAGNOSTIC METRICS: Daraja Consumer Keys should be exactly 28 chars. Secrets should be 16 chars.
+        return NextResponse.json({ 
+          error: `Safaricom OAuth Blocked (400). KeyLength: ${consumerKey.length}, SecretLength: ${consumerSecret.length}. Raw: ${tokenText || "Empty"}` 
+        }, { status: 502 });
     }
 
-    let tokenData;
-    try {
-      tokenData = JSON.parse(tokenText);
-    } catch (e) {
-      return NextResponse.json({ error: `JSON Parse Crash. Status: ${tokenStatus}. Raw: ${tokenText}` }, { status: 502 });
-    }
+    const tokenData = JSON.parse(tokenText);
 
     if (!tokenData.access_token) {
-      return NextResponse.json({ error: `Safaricom returned OK but no token. Response: ${tokenText}` }, { status: 502 });
+      return NextResponse.json({ error: `Safaricom OAuth failed to return token. Raw: ${tokenText}` }, { status: 502 });
     }
 
     // 2. Security Passwords
@@ -75,9 +69,7 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${tokenData.access_token}`,
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache',
-        'User-Agent': 'AI-BOS-Server/1.0'
+        'Content-Type': 'application/json'
       },
       cache: 'no-store',
       body: JSON.stringify({
@@ -91,7 +83,7 @@ export async function POST(req: NextRequest) {
         PhoneNumber: formattedPhone,
         CallBackURL: callbackUrl,
         AccountReference: userId || "AI_BOS_GUEST",
-        TransactionDesc: "AI-BOS Professional Upgrade"
+        TransactionDesc: "AI-BOS Upgrade"
       })
     });
 
@@ -99,15 +91,10 @@ export async function POST(req: NextRequest) {
     const stkText = await stkResponse.text();
     
     if (!stkResponse.ok) {
-        return NextResponse.json({ error: `Safaricom STK Blocked. Status Code: ${stkStatus}. Raw: ${stkText || "Empty"}` }, { status: 502 });
+        return NextResponse.json({ error: `Safaricom STK Blocked. Status: ${stkStatus}. Raw: ${stkText || "Empty"}` }, { status: 502 });
     }
 
-    let stkData;
-    try {
-      stkData = JSON.parse(stkText);
-    } catch (e) {
-      return NextResponse.json({ error: `STK JSON Crash. Status: ${stkStatus}. Raw: ${stkText}` }, { status: 502 });
-    }
+    const stkData = JSON.parse(stkText);
 
     if (stkData.errorMessage) {
       return NextResponse.json({ error: `Safaricom Rejected Payment: ${stkData.errorMessage}` }, { status: 502 });
@@ -118,4 +105,4 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json({ error: `Server Exception: ${err.message}` }, { status: 500 });
   }
-        }
+}
