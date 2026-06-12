@@ -2,75 +2,126 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
-import { Terminal, Users, Layers, Activity, Send, Landmark, LogOut, Zap, BarChart3, Lock, ShieldCheck } from 'lucide-react';
+import {
+  Terminal, Users, Layers, Activity, Send, Landmark,
+  LogOut, Zap, BarChart3, Lock, ShieldCheck, Menu, X,
+  TrendingUp, Scale, Megaphone, ChevronRight
+} from 'lucide-react';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+const AGENTS: Record<string, { label: string; color: string; border: string; text: string; dot: string }> = {
+  ai_ceo: {
+    label: 'AI CEO',
+    color: 'bg-neutral-900',
+    border: 'border-neutral-800',
+    text: 'text-neutral-100',
+    dot: 'bg-neutral-400',
+  },
+  ai_marketing: {
+    label: 'Marketing Agent',
+    color: 'bg-indigo-950/40',
+    border: 'border-indigo-900/50',
+    text: 'text-indigo-100',
+    dot: 'bg-indigo-400',
+  },
+  ai_analyst: {
+    label: 'Data Analyst',
+    color: 'bg-emerald-950/40',
+    border: 'border-emerald-900/50',
+    text: 'text-emerald-100',
+    dot: 'bg-emerald-400',
+  },
+};
+
+function TypingIndicator() {
+  return (
+    <div className="flex justify-start">
+      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce [animation-delay:0ms]" />
+        <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce [animation-delay:150ms]" />
+        <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce [animation-delay:300ms]" />
+      </div>
+    </div>
+  );
+}
+
+function MessageBubble({ msg }: { msg: { role: string; text: string } }) {
+  const isUser = msg.role === 'user';
+  const agent = AGENTS[msg.role];
+
+  if (isUser) {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[78%] bg-white text-black rounded-2xl rounded-br-sm px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap">
+          {msg.text}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex justify-start gap-2">
+      <div className="flex-shrink-0 mt-1">
+        <div className={`w-6 h-6 rounded-full ${agent?.dot ?? 'bg-neutral-500'} flex items-center justify-center`}>
+          <span className="text-[9px] font-bold text-black">AI</span>
+        </div>
+      </div>
+      <div className="max-w-[78%] flex flex-col gap-1">
+        {agent && (
+          <span className="text-[10px] font-semibold text-neutral-500 tracking-wide uppercase pl-1">
+            {agent.label}
+          </span>
+        )}
+        <div className={`${agent?.color ?? 'bg-neutral-900'} border ${agent?.border ?? 'border-neutral-800'} ${agent?.text ?? 'text-neutral-100'} rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap`}>
+          {msg.text}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const [isAuthenticating, setIsAuthenticating] = useState(true);
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState<{ role: string; text: string }[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [isPro, setIsPro] = useState(false); // NEW: Enterprise Tier Tracking
+  const [isPro, setIsPro] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, loading]);
 
   useEffect(() => {
     const initializeSystem = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        router.push('/login');
-        return;
-      }
+      if (!session) { router.push('/login'); return; }
 
-      // Fetch User's Professional Status from Database
       const { data: profile } = await supabase
-        .from('profiles')
-        .select('is_pro')
-        .eq('id', session.user.id)
-        .single();
-        
-      if (profile?.is_pro) {
-        setIsPro(true);
-      }
-      
-      // Fetch Enterprise Memory
+        .from('profiles').select('is_pro').eq('id', session.user.id).single();
+      if (profile?.is_pro) setIsPro(true);
+
       const { data: history } = await supabase
-        .from('messages')
-        .select('*')
-        .order('created_at', { ascending: true });
+        .from('messages').select('*').order('created_at', { ascending: true });
 
       if (history && history.length > 0) {
-        setMessages(history.map(msg => ({
-          role: msg.sender,
-          text: msg.content
-        })));
+        setMessages(history.map(msg => ({ role: msg.sender, text: msg.content })));
       } else {
-        setMessages([{ role: 'ai_ceo', text: 'System initialized. State your objective.' }]);
+        setMessages([{ role: 'ai_ceo', text: 'System initialized. State your objective and I\'ll deploy the right agents.' }]);
       }
-      
       setIsAuthenticating(false);
     };
-    
     initializeSystem();
   }, [router]);
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/login');
-  };
+  const handleLogout = async () => { await supabase.auth.signOut(); router.push('/login'); };
 
-  // SaaS METERING LOGIC: Bypass limits entirely if the user is PRO
   const userInteractionCount = messages.filter(m => m.role === 'user').length;
   const FREE_LIMIT = 5;
   const isPaywalled = !isPro && userInteractionCount >= FREE_LIMIT;
@@ -78,217 +129,275 @@ export default function Dashboard() {
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || loading || isPaywalled) return;
-
     const userMessage = { role: 'user', text: input };
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages(prev => [...prev, userMessage]);
     setInput('');
     setLoading(true);
-
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage.text })
+        body: JSON.stringify({ message: userMessage.text }),
       });
       const data = await response.json();
-      setMessages((prev) => [...prev, { role: 'ai_ceo', text: data.reply || data.error }]);
-    } catch (err) {
-      setMessages((prev) => [...prev, { role: 'ai_ceo', text: 'Network connection link severed.' }]);
+      setMessages(prev => [...prev, { role: 'ai_ceo', text: data.reply || data.error }]);
+    } catch {
+      setMessages(prev => [...prev, { role: 'ai_ceo', text: 'Network connection severed. Please retry.' }]);
     } finally {
       setLoading(false);
+      inputRef.current?.focus();
     }
   };
 
-  const triggerMarketingWorkflow = async () => {
+  const triggerWorkflow = async (
+    promptText: string,
+    endpoint: string,
+    bodyKey: string,
+    agentRole: string,
+    offlineMsg: string
+  ) => {
     if (loading || isPaywalled) return;
-    const targetProduct = prompt("What product are we creating a campaign for?");
-    if (!targetProduct) return;
-
-    setMessages((prev) => [...prev, { role: 'user', text: `Execute 3-Day Email Campaign for: ${targetProduct}` }]);
+    const value = prompt(promptText);
+    if (!value) return;
+    setMessages(prev => [...prev, { role: 'user', text: `${promptText.split('?')[0]}: ${value}` }]);
     setLoading(true);
-
     try {
-      const response = await fetch('/api/marketing', {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product: targetProduct })
+        body: JSON.stringify({ [bodyKey]: value }),
       });
       const data = await response.json();
-      setMessages((prev) => [...prev, { role: 'ai_marketing', text: data.reply || data.error }]);
-    } catch (err) {
-      setMessages((prev) => [...prev, { role: 'ai_marketing', text: 'Marketing Agent offline.' }]);
+      setMessages(prev => [...prev, { role: agentRole, text: data.reply || data.error }]);
+    } catch {
+      setMessages(prev => [...prev, { role: agentRole, text: offlineMsg }]);
     } finally {
       setLoading(false);
     }
   };
 
-  const triggerAnalystWorkflow = async () => {
-    if (loading || isPaywalled) return;
-    const targetMetric = prompt("What financial metric or recent campaign should I analyze?");
-    if (!targetMetric) return;
-
-    setMessages((prev) => [...prev, { role: 'user', text: `Run Financial Analysis on: ${targetMetric}` }]);
-    setLoading(true);
-
-    try {
-      const response = await fetch('/api/analyst', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ metric: targetMetric })
-      });
-      const data = await response.json();
-      setMessages((prev) => [...prev, { role: 'ai_analyst', text: data.reply || data.error }]);
-    } catch (err) {
-      setMessages((prev) => [...prev, { role: 'ai_analyst', text: 'Data Analyst offline.' }]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const quickActions = [
+    {
+      label: 'Email Campaign',
+      icon: <Zap size={13} />,
+      color: 'text-indigo-400',
+      action: () => triggerWorkflow('What product are we creating a campaign for?', '/api/marketing', 'product', 'ai_marketing', 'Marketing Agent offline.'),
+    },
+    {
+      label: 'Financial Analysis',
+      icon: <BarChart3 size={13} />,
+      color: 'text-emerald-400',
+      action: () => triggerWorkflow('What metric or campaign should I analyze?', '/api/analyst', 'metric', 'ai_analyst', 'Data Analyst offline.'),
+    },
+    {
+      label: 'Strategy',
+      icon: <TrendingUp size={13} />,
+      color: 'text-amber-400',
+      action: () => setInput('Build a 90-day growth strategy for '),
+    },
+    {
+      label: 'Legal Review',
+      icon: <Scale size={13} />,
+      color: 'text-rose-400',
+      action: () => setInput('Review the following contract clause: '),
+    },
+    {
+      label: 'Content Plan',
+      icon: <Megaphone size={13} />,
+      color: 'text-purple-400',
+      action: () => setInput('Create a content calendar for '),
+    },
+  ];
 
   if (isAuthenticating) {
-    return <div className="flex h-screen items-center justify-center bg-black text-white text-sm">Synchronizing Enterprise Memory...</div>;
+    return (
+      <div className="flex h-screen items-center justify-center bg-neutral-950 text-white">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 rounded-lg bg-white flex items-center justify-center text-black font-bold text-sm">Ω</div>
+          <p className="text-sm text-neutral-400 animate-pulse">Synchronizing Enterprise Memory...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="flex h-screen bg-neutral-950 text-neutral-200 overflow-hidden text-xs sm:text-sm relative">
-      
-      {/* PAYWALL OVERLAY - ONLY SHOWS IF NOT PRO */}
+    <div className="flex h-screen bg-neutral-950 text-neutral-200 overflow-hidden text-sm relative">
+
+      {/* PAYWALL OVERLAY */}
       {isPaywalled && (
         <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-neutral-800 p-8 rounded-2xl max-w-md w-full text-center shadow-2xl">
+          <div className="bg-neutral-900 border border-neutral-800 p-8 rounded-2xl max-w-sm w-full text-center">
             <div className="mx-auto w-12 h-12 bg-indigo-500/20 text-indigo-400 flex items-center justify-center rounded-full mb-4">
               <Lock size={24} />
             </div>
-            <h2 className="text-xl font-bold text-white mb-2">Compute Limit Reached</h2>
-            <p className="text-neutral-400 mb-6 text-sm">You have exhausted your free tier execution cycles. Upgrade to the Professional Plan to unlock unlimited AI workforce access.</p>
-            <button onClick={() => router.push('/billing')} className="w-full bg-white text-black font-semibold py-3 rounded-xl hover:bg-neutral-200 transition">
-              Upgrade to Pro - KES 6,500/mo
+            <h2 className="text-lg font-semibold text-white mb-2">Compute Limit Reached</h2>
+            <p className="text-neutral-400 mb-6 text-sm leading-relaxed">
+              You've used your {FREE_LIMIT} free executions. Upgrade to unlock unlimited AI workforce access.
+            </p>
+            <button
+              onClick={() => router.push('/billing')}
+              className="w-full bg-white text-black font-semibold py-3 rounded-xl hover:bg-neutral-200 transition flex items-center justify-center gap-2"
+            >
+              Upgrade to Pro — KES 6,500/mo <ChevronRight size={16} />
             </button>
-            <button onClick={handleLogout} className="w-full mt-3 text-neutral-500 text-xs hover:text-white transition">
-              Log out
+            <button onClick={handleLogout} className="w-full mt-3 text-neutral-500 text-xs hover:text-white transition py-2">
+              Sign out
             </button>
           </div>
         </div>
       )}
 
-      <aside className="hidden md:flex w-64 border-r border-neutral-900 bg-neutral-950 p-6 flex-col justify-between">
+      {/* MOBILE SIDEBAR OVERLAY */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* SIDEBAR */}
+      <aside className={`
+        fixed md:relative z-50 md:z-auto
+        w-64 h-full border-r border-neutral-900 bg-neutral-950 p-6 flex flex-col justify-between
+        transition-transform duration-200
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}>
         <div>
-          <div className="flex items-center gap-2 mb-8">
-            <div className="h-6 w-6 rounded bg-white flex items-center justify-center text-black font-bold text-xs">Ω</div>
-            <span className="text-sm font-semibold tracking-wider text-white">AI-BOS</span>
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-2">
+              <div className="h-7 w-7 rounded-lg bg-white flex items-center justify-center text-black font-bold text-sm">Ω</div>
+              <span className="text-sm font-semibold tracking-wider text-white">AI-BOS</span>
+            </div>
+            <button className="md:hidden text-neutral-500" onClick={() => setSidebarOpen(false)}>
+              <X size={16} />
+            </button>
           </div>
-          <nav className="space-y-2">
-            <button className="flex w-full items-center gap-3 rounded-lg bg-neutral-900 px-3 py-2 text-sm font-medium text-white text-left">
-              <Terminal size={16} /> Command Core
-            </button>
-            <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-neutral-400 hover:text-white transition text-left">
-              <Users size={16} /> AI Workforce
-            </button>
-            <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-neutral-400 hover:text-white transition text-left">
-              <Layers size={16} /> Architecture
-            </button>
+          <nav className="space-y-1">
+            {[
+              { icon: <Terminal size={15} />, label: 'Command Core', active: true },
+              { icon: <Users size={15} />, label: 'AI Workforce', active: false },
+              { icon: <Layers size={15} />, label: 'Architecture', active: false },
+            ].map(({ icon, label, active }) => (
+              <button
+                key={label}
+                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-left transition ${
+                  active ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
+                }`}
+              >
+                {icon} {label}
+              </button>
+            ))}
           </nav>
         </div>
+
         <div className="space-y-4">
-          <button onClick={handleLogout} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-red-500 hover:bg-red-950/30 transition text-left">
-            <LogOut size={16} /> Terminate Session
+          <button
+            onClick={handleLogout}
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-red-500 hover:bg-red-950/30 transition text-left"
+          >
+            <LogOut size={15} /> Sign out
           </button>
-          <div className="flex flex-col gap-2 border-t border-neutral-900 pt-4">
+
+          <div className="border-t border-neutral-900 pt-4">
             {isPro ? (
-              <div className="flex items-center justify-between text-xs text-indigo-400 font-bold p-2 bg-indigo-950/30 rounded-lg border border-indigo-900/50">
-                <span className="flex items-center gap-1.5"><ShieldCheck size={14} /> PRO INSTANCE</span>
+              <div className="flex items-center justify-between text-xs text-indigo-400 font-semibold p-2.5 bg-indigo-950/30 rounded-xl border border-indigo-900/50">
+                <span className="flex items-center gap-1.5"><ShieldCheck size={13} /> PRO</span>
                 <span>Unlimited</span>
               </div>
             ) : (
-              <>
+              <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs text-neutral-500">
-                  <span className="flex items-center gap-1.5"><Activity size={12} className="text-emerald-500" /> Free Tier</span>
-                  <span>{Math.max(0, FREE_LIMIT - userInteractionCount)} credits left</span>
+                  <span className="flex items-center gap-1.5">
+                    <Activity size={11} className="text-emerald-500" /> Free Tier
+                  </span>
+                  <span>{Math.max(0, FREE_LIMIT - userInteractionCount)} / {FREE_LIMIT} left</span>
                 </div>
-                <div className="w-full bg-neutral-900 rounded-full h-1.5">
-                  <div className="bg-emerald-500 h-1.5 rounded-full transition-all" style={{ width: `${Math.min(100, (userInteractionCount / FREE_LIMIT) * 100)}%` }}></div>
+                <div className="w-full bg-neutral-900 rounded-full h-1">
+                  <div
+                    className="bg-emerald-500 h-1 rounded-full transition-all"
+                    style={{ width: `${Math.min(100, (userInteractionCount / FREE_LIMIT) * 100)}%` }}
+                  />
                 </div>
-              </>
+              </div>
             )}
           </div>
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col min-w-0 bg-neutral-900/20">
-        <header className="border-b border-neutral-900 p-4 sm:p-6 flex justify-between items-center bg-neutral-950/80">
-          <div>
-            <h1 className="text-sm sm:text-md font-medium tracking-tight text-white">HQ Control Interface</h1>
-            <p className="text-xs text-neutral-500 hidden sm:block">Deterministic multi-agent execution array</p>
-          </div>
-          <div className="flex gap-2">
-            <div className="bg-neutral-900 border border-neutral-800 px-3 py-1.5 rounded text-neutral-400 flex items-center gap-1.5">
-              <Landmark size={12} className="text-neutral-500" /> Layer: <span className="text-white font-mono font-bold">Secure</span>
-            </div>
-            <button onClick={handleLogout} className="md:hidden bg-red-950/30 border border-red-900/50 px-3 py-1.5 rounded text-red-500 flex items-center">
-               <LogOut size={14} />
+      {/* MAIN */}
+      <main className="flex-1 flex flex-col min-w-0">
+
+        {/* HEADER */}
+        <header className="border-b border-neutral-900 px-4 py-3 flex justify-between items-center bg-neutral-950 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <button
+              className="md:hidden text-neutral-400 hover:text-white transition"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <Menu size={18} />
             </button>
+            <div>
+              <h1 className="text-sm font-medium text-white">Command Core</h1>
+              <p className="text-[11px] text-neutral-500 hidden sm:block">Multi-agent execution</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="bg-neutral-900 border border-neutral-800 px-3 py-1.5 rounded-lg text-neutral-400 flex items-center gap-1.5 text-xs">
+              <Landmark size={11} className="text-neutral-500" />
+              <span className="text-white font-mono font-semibold">Secure</span>
+            </div>
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+        {/* MESSAGES */}
+        <div className="flex-1 overflow-y-auto px-4 py-5 space-y-4">
           {messages.map((msg, idx) => (
-            <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-xl rounded-xl px-4 py-3 text-sm leading-relaxed tracking-normal shadow-sm whitespace-pre-wrap ${
-                msg.role === 'user' ? 'bg-white text-black font-normal' : 
-                msg.role === 'ai_marketing' ? 'bg-indigo-950/40 border border-indigo-900/50 text-indigo-100' :
-                msg.role === 'ai_analyst' ? 'bg-emerald-950/40 border border-emerald-900/50 text-emerald-100' :
-                'bg-neutral-900 border border-neutral-850 text-neutral-100'
-              }`}>
-                {msg.role === 'ai_marketing' && <div className="text-xs font-bold text-indigo-400 mb-2 border-b border-indigo-900/50 pb-1 flex items-center gap-1"><Zap size={12}/> MARKETING DEPT</div>}
-                {msg.role === 'ai_analyst' && <div className="text-xs font-bold text-emerald-400 mb-2 border-b border-emerald-900/50 pb-1 flex items-center gap-1"><BarChart3 size={12}/> DATA ANALYST</div>}
-                {msg.role === 'ai_ceo' && <div className="text-xs font-bold text-neutral-400 mb-2 border-b border-neutral-800 pb-1">AI CEO</div>}
-                {msg.text}
-              </div>
-            </div>
+            <MessageBubble key={idx} msg={msg} />
           ))}
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-neutral-900 border border-neutral-850 text-neutral-400 rounded-xl px-4 py-3 text-sm animate-pulse">
-                Workforce executing directive...
-              </div>
-            </div>
-          )}
+          {loading && <TypingIndicator />}
           <div ref={messagesEndRef} />
         </div>
 
-        <footer className="p-4 sm:p-6 bg-neutral-950/80 border-t border-neutral-900 flex flex-col gap-3">
+        {/* FOOTER */}
+        <footer className="px-4 pt-3 pb-5 bg-neutral-950 border-t border-neutral-900 flex-shrink-0 space-y-3">
+
+          {/* QUICK ACTION CHIPS */}
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-            <button 
-              onClick={triggerMarketingWorkflow}
-              disabled={loading || isPaywalled}
-              className="flex items-center gap-1.5 whitespace-nowrap bg-neutral-900 border border-neutral-800 text-indigo-400 font-medium text-xs px-3 py-2 rounded-lg hover:bg-neutral-800 transition disabled:opacity-50"
-            >
-              <Zap size={14} /> + Email Campaign
-            </button>
-            <button 
-              onClick={triggerAnalystWorkflow}
-              disabled={loading || isPaywalled}
-              className="flex items-center gap-1.5 whitespace-nowrap bg-neutral-900 border border-neutral-800 text-emerald-400 font-medium text-xs px-3 py-2 rounded-lg hover:bg-neutral-800 transition disabled:opacity-50"
-            >
-              <BarChart3 size={14} /> + Financial Analysis
-            </button>
+            {quickActions.map(({ label, icon, color, action }) => (
+              <button
+                key={label}
+                onClick={action}
+                disabled={loading || isPaywalled}
+                className={`flex items-center gap-1.5 whitespace-nowrap bg-neutral-900 border border-neutral-800 ${color} font-medium text-xs px-3 py-2 rounded-xl hover:bg-neutral-800 transition disabled:opacity-40 flex-shrink-0`}
+              >
+                {icon} {label}
+              </button>
+            ))}
           </div>
 
-          <form onSubmit={handleSendMessage} className="relative flex items-center w-full">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={isPaywalled ? "Execution limit reached. Upgrade to continue." : "Instruct your AI Workforce..."}
-              className="w-full bg-neutral-900 border border-neutral-800 rounded-xl pl-4 pr-12 py-3.5 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-neutral-700 transition disabled:opacity-50"
-              disabled={loading || isPaywalled}
-            />
-            <button type="submit" className="absolute right-3 p-2 rounded-lg bg-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-700 transition disabled:opacity-50" disabled={loading || isPaywalled || !input.trim()}>
-              <Send size={14} />
+          {/* INPUT */}
+          <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+            <div className="flex-1 relative">
+              <input
+                ref={inputRef}
+                type="text"
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                placeholder={isPaywalled ? 'Upgrade to continue...' : 'Instruct your AI Workforce...'}
+                disabled={loading || isPaywalled}
+                className="w-full bg-neutral-900 border border-neutral-800 rounded-2xl pl-4 pr-4 py-3 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-neutral-700 transition disabled:opacity-50"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading || isPaywalled || !input.trim()}
+              className="w-10 h-10 rounded-2xl bg-white text-black flex items-center justify-center hover:bg-neutral-200 transition disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+            >
+              <Send size={15} />
             </button>
           </form>
         </footer>
       </main>
     </div>
   );
-          }
+      }
