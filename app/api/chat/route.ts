@@ -4,7 +4,6 @@ export const fetchCache = 'force-no-store';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// THE MASTER SYSTEM PROMPT
 const SYSTEM_PROMPT = `You are the AI-BOS (Artificial Intelligence Business Operating System), an elite, ruthless, and highly strategic digital executive team compressed into a single entity. 
 You act concurrently as:
 1. Chief Executive Officer (Focus: Scalability, competitive moats, zero-capital growth, remote-first execution).
@@ -29,7 +28,7 @@ export async function POST(req: NextRequest) {
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const geminiKey = process.env.GEMINI_API_KEY;
+    const geminiKey   = process.env.GEMINI_API_KEY;
 
     if (!supabaseUrl || !supabaseKey || !geminiKey) {
       return NextResponse.json({ error: "CRITICAL: Server environment variables missing." }, { status: 500 });
@@ -37,44 +36,48 @@ export async function POST(req: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // 1. Save the Founder's incoming message to memory
-    await supabase.from('messages').insert({
+    // 1. Save the user's message — using 'sender' column
+    const { error: insertUserErr } = await supabase.from('messages').insert({
       user_id: userId,
-      role: 'user',
-      content: prompt
+      sender:  'user',        // ✅ fixed: was 'role'
+      content: prompt,
     });
+    if (insertUserErr) throw insertUserErr;
 
-    // 2. Retrieve the last 10 messages for context (Persistent Memory)
+    // 2. Retrieve last 10 messages for context
     const { data: history, error: historyError } = await supabase
       .from('messages')
-      .select('role, content')
+      .select('sender, content')  // ✅ fixed: was 'role, content'
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(10);
 
     if (historyError) throw historyError;
 
-    // 3. Format history for Google Gemini (Chronological order)
+    // 3. Format for Gemini (needs 'role' field, map from 'sender')
     const formattedHistory = history.reverse().map(msg => ({
-      role: msg.role === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.content }]
+      role:  msg.sender === 'user' ? 'user' : 'model',  // ✅ fixed: was msg.role
+      parts: [{ text: msg.content }],
     }));
 
-    // 4. Dispatch to Gemini 2.5 Flash via Native REST (Zero NPM dependencies)
+    // 4. Call Gemini 2.5 Flash
     const geminiPayload = {
       system_instruction: { parts: { text: SYSTEM_PROMPT } },
       contents: formattedHistory,
       generationConfig: {
-        temperature: 0.7,
+        temperature:     0.7,
         maxOutputTokens: 2048,
-      }
+      },
     };
 
-    const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(geminiPayload)
-    });
+    const geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+      {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(geminiPayload),
+      }
+    );
 
     const geminiData = await geminiResponse.json();
 
@@ -85,12 +88,13 @@ export async function POST(req: NextRequest) {
 
     const aiTextResponse = geminiData.candidates[0].content.parts[0].text;
 
-    // 5. Save the AI's response to memory
-    await supabase.from('messages').insert({
+    // 5. Save AI response — using 'sender' column
+    const { error: insertAiErr } = await supabase.from('messages').insert({
       user_id: userId,
-      role: 'model',
-      content: aiTextResponse
+      sender:  'model',       // ✅ fixed: was 'role'
+      content: aiTextResponse,
     });
+    if (insertAiErr) throw insertAiErr;
 
     return NextResponse.json({ success: true, reply: aiTextResponse });
 
@@ -101,7 +105,6 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  // Endpoint to load chat history on page load
   try {
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get('userId');
@@ -110,17 +113,18 @@ export async function GET(req: NextRequest) {
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase    = createClient(supabaseUrl, supabaseKey);
 
     const { data, error } = await supabase
       .from('messages')
-      .select('role, content')
+      .select('sender, content')   // ✅ fixed: was 'role, content'
       .eq('user_id', userId)
       .order('created_at', { ascending: true });
 
     if (error) throw error;
 
     return NextResponse.json({ success: true, messages: data });
+
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
