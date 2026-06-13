@@ -30,7 +30,6 @@ export async function POST(req: NextRequest) {
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const geminiKey   = process.env.GEMINI_API_KEY;
 
-    // ── Debug: show exactly which env vars are missing ──
     if (!supabaseUrl || !supabaseKey || !geminiKey) {
       const missing = [
         !supabaseUrl && 'NEXT_PUBLIC_SUPABASE_URL',
@@ -42,30 +41,34 @@ export async function POST(req: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // 1. Save user message
+    // 1. Get previous history BEFORE saving current message
+    const { data: history } = await supabase
+      .from('messages')
+      .select('sender, content')
+      .eq('profile_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(9); // leave room for current message
+
+    // 2. Build contents array — history + current prompt
+    const previousMessages = (history ?? []).reverse().map(msg => ({
+      role:  msg.sender === 'user' ? 'user' : 'model',
+      parts: [{ text: msg.content }],
+    }));
+
+    // ✅ Always add current prompt — Gemini MUST have at least 1 message
+    const contents = [
+      ...previousMessages,
+      { role: 'user', parts: [{ text: prompt }] },
+    ];
+
+    // 3. Save user message to DB
     await supabase.from('messages').insert({
       profile_id: userId,
       sender:     'user',
       content:    prompt,
     });
 
-    // 2. Get last 10 messages
-    const { data: history, error: historyError } = await supabase
-      .from('messages')
-      .select('sender, content')
-      .eq('profile_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(10);
-
-    if (historyError) throw historyError;
-
-    // 3. Format for Gemini
-    const formattedHistory = (history ?? []).reverse().map(msg => ({
-      role:  msg.sender === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.content }],
-    }));
-
-    // 4. Call Gemini — try 1.5-flash (stable & free)
+    // 4. Call Gemini 1.5 Flash
     const geminiResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,
       {
@@ -73,7 +76,7 @@ export async function POST(req: NextRequest) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           system_instruction: { parts: { text: SYSTEM_PROMPT } },
-          contents: formattedHistory,
+          contents,
           generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
         }),
       }
@@ -81,14 +84,10 @@ export async function POST(req: NextRequest) {
 
     const geminiData = await geminiResponse.json();
 
-    // ── Debug: return exact Gemini error so we can see it ──
     if (!geminiResponse.ok) {
       const geminiError = geminiData?.error?.message || JSON.stringify(geminiData);
       console.error("Gemini Error:", geminiError);
-      return NextResponse.json(
-        { error: `Gemini Error: ${geminiError}` },
-        { status: 502 }
-      );
+      return NextResponse.json({ error: `Gemini Error: ${geminiError}` }, { status: 502 });
     }
 
     const aiTextResponse = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
