@@ -30,36 +30,42 @@ export async function POST(req: NextRequest) {
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const geminiKey   = process.env.GEMINI_API_KEY;
 
+    // ── Debug: show exactly which env vars are missing ──
     if (!supabaseUrl || !supabaseKey || !geminiKey) {
-      return NextResponse.json({ error: "CRITICAL: Server environment variables missing." }, { status: 500 });
+      const missing = [
+        !supabaseUrl && 'NEXT_PUBLIC_SUPABASE_URL',
+        !supabaseKey && 'SUPABASE_SERVICE_ROLE_KEY',
+        !geminiKey   && 'GEMINI_API_KEY',
+      ].filter(Boolean).join(', ');
+      return NextResponse.json({ error: `Missing env vars: ${missing}` }, { status: 500 });
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // 1. Save user message — profile_id + sender + content
+    // 1. Save user message
     await supabase.from('messages').insert({
-      profile_id: userId,   // ✅ correct column name
-      sender: 'user',       // ✅ correct column name
-      content: prompt,
+      profile_id: userId,
+      sender:     'user',
+      content:    prompt,
     });
 
-    // 2. Get last 10 messages for this user
+    // 2. Get last 10 messages
     const { data: history, error: historyError } = await supabase
       .from('messages')
       .select('sender, content')
-      .eq('profile_id', userId)   // ✅ correct column name
+      .eq('profile_id', userId)
       .order('created_at', { ascending: false })
       .limit(10);
 
     if (historyError) throw historyError;
 
-    // 3. Format for Gemini — map sender → role
+    // 3. Format for Gemini
     const formattedHistory = (history ?? []).reverse().map(msg => ({
       role:  msg.sender === 'user' ? 'user' : 'model',
       parts: [{ text: msg.content }],
     }));
 
-    // 4. Call Gemini 2.5 Flash
+    // 4. Call Gemini — try 1.5-flash (stable & free)
     const geminiResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,
       {
@@ -75,18 +81,26 @@ export async function POST(req: NextRequest) {
 
     const geminiData = await geminiResponse.json();
 
+    // ── Debug: return exact Gemini error so we can see it ──
     if (!geminiResponse.ok) {
-      console.error("Gemini API Error:", geminiData);
-      return NextResponse.json({ error: "Upstream AI failure." }, { status: 502 });
+      const geminiError = geminiData?.error?.message || JSON.stringify(geminiData);
+      console.error("Gemini Error:", geminiError);
+      return NextResponse.json(
+        { error: `Gemini Error: ${geminiError}` },
+        { status: 502 }
+      );
     }
 
-    const aiTextResponse = geminiData.candidates[0].content.parts[0].text;
+    const aiTextResponse = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!aiTextResponse) {
+      return NextResponse.json({ error: "Gemini returned empty response." }, { status: 502 });
+    }
 
     // 5. Save AI response
     await supabase.from('messages').insert({
-      profile_id: userId,   // ✅ correct column name
-      sender: 'model',      // ✅ correct column name
-      content: aiTextResponse,
+      profile_id: userId,
+      sender:     'model',
+      content:    aiTextResponse,
     });
 
     return NextResponse.json({ success: true, reply: aiTextResponse });
@@ -101,21 +115,20 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get('userId');
-
     if (!userId) return NextResponse.json({ error: "No userId provided" }, { status: 400 });
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-    const supabase    = createClient(supabaseUrl, supabaseKey);
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
 
     const { data, error } = await supabase
       .from('messages')
       .select('sender, content')
-      .eq('profile_id', userId)   // ✅ correct column name
+      .eq('profile_id', userId)
       .order('created_at', { ascending: true });
 
     if (error) throw error;
-
     return NextResponse.json({ success: true, messages: data });
 
   } catch (err: any) {
