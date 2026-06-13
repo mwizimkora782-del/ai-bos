@@ -41,47 +41,45 @@ export async function POST(req: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // 1. Get previous history BEFORE saving current message
+    // 1. Get history BEFORE saving current message
     const { data: history } = await supabase
       .from('messages')
       .select('sender, content')
       .eq('profile_id', userId)
       .order('created_at', { ascending: false })
-      .limit(9); // leave room for current message
+      .limit(9);
 
-    // 2. Build contents array — history + current prompt
-    const previousMessages = (history ?? []).reverse().map(msg => ({
-      role:  msg.sender === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.content }],
-    }));
-
-    // ✅ Always add current prompt — Gemini MUST have at least 1 message
+    // 2. Build contents — history + current prompt
     const contents = [
-      ...previousMessages,
+      ...(history ?? []).reverse().map(msg => ({
+        role:  msg.sender === 'user' ? 'user' : 'model',
+        parts: [{ text: msg.content }],
+      })),
       { role: 'user', parts: [{ text: prompt }] },
     ];
 
-    // 3. Save user message to DB
+    // 3. Save user message
     await supabase.from('messages').insert({
       profile_id: userId,
       sender:     'user',
       content:    prompt,
     });
 
-    // 4. Call Gemini 1.5 Flash
+    // 4. Call Gemini 2.5 Flash (free, current model) with v1beta + system_instruction
     const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
       {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [
-            // Inject system prompt as first user+model exchange
-            { role: 'user',  parts: [{ text: 'You are AI-BOS. Confirm your role.' }] },
-            { role: 'model', parts: [{ text: SYSTEM_PROMPT }] },
-            ...contents,
-          ],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
+          system_instruction: {
+            parts: [{ text: SYSTEM_PROMPT }]
+          },
+          contents,
+          generationConfig: {
+            temperature:     0.7,
+            maxOutputTokens: 2048,
+          },
         }),
       }
     );
