@@ -91,6 +91,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [isPro, setIsPro] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [userId, setUserId] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -103,12 +104,17 @@ export default function Dashboard() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { router.push('/login'); return; }
 
+      setUserId(session.user.id);
+
       const { data: profile } = await supabase
         .from('profiles').select('is_pro').eq('id', session.user.id).single();
       if (profile?.is_pro) setIsPro(true);
 
       const { data: history } = await supabase
-        .from('messages').select('*').order('created_at', { ascending: true });
+        .from('messages')
+        .select('*')
+        .eq('profile_id', session.user.id)
+        .order('created_at', { ascending: true });
 
       if (history && history.length > 0) {
         setMessages(history.map(msg => ({ role: msg.sender, text: msg.content })));
@@ -126,6 +132,7 @@ export default function Dashboard() {
   const FREE_LIMIT = 5;
   const isPaywalled = !isPro && userInteractionCount >= FREE_LIMIT;
 
+  // ✅ Fixed: sends prompt + userId
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || loading || isPaywalled) return;
@@ -137,7 +144,7 @@ export default function Dashboard() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage.text }),
+        body: JSON.stringify({ prompt: userMessage.text, userId }),
       });
       const data = await response.json();
       setMessages(prev => [...prev, { role: 'ai_ceo', text: data.reply || data.error }]);
@@ -209,6 +216,14 @@ export default function Dashboard() {
     },
   ];
 
+  // ── Sidebar nav items with routing ──
+  const NAV_ITEMS = [
+    { icon: <Terminal size={15} />,  label: 'Command Core',    href: '/',                  active: true  },
+    { icon: <Zap size={15} />,       label: 'Command Center',  href: '/command-center',    active: false },
+    { icon: <Users size={15} />,     label: 'AI Workforce',    href: '/workforce',         active: false },
+    { icon: <Layers size={15} />,    label: 'Architecture',    href: '/architecture',      active: false },
+  ];
+
   if (isAuthenticating) {
     return (
       <div className="flex h-screen items-center justify-center bg-neutral-950 text-white">
@@ -249,10 +264,7 @@ export default function Dashboard() {
 
       {/* MOBILE SIDEBAR OVERLAY */}
       {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/60 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
+        <div className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
       {/* SIDEBAR */}
@@ -272,14 +284,13 @@ export default function Dashboard() {
               <X size={16} />
             </button>
           </div>
+
+          {/* ✅ Nav with working routes */}
           <nav className="space-y-1">
-            {[
-              { icon: <Terminal size={15} />, label: 'Command Core', active: true },
-              { icon: <Users size={15} />, label: 'AI Workforce', active: false },
-              { icon: <Layers size={15} />, label: 'Architecture', active: false },
-            ].map(({ icon, label, active }) => (
+            {NAV_ITEMS.map(({ icon, label, href, active }) => (
               <button
                 key={label}
+                onClick={() => { router.push(href); setSidebarOpen(false); }}
                 className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-left transition ${
                   active ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
                 }`}
@@ -288,6 +299,26 @@ export default function Dashboard() {
               </button>
             ))}
           </nav>
+
+          {/* ✅ Quick nav cards — mobile shortcut */}
+          <div className="mt-6 grid grid-cols-2 gap-2 md:hidden">
+            <button
+              onClick={() => router.push('/command-center')}
+              className="flex flex-col items-start gap-1 bg-neutral-900 border border-neutral-800 rounded-xl p-3 hover:bg-neutral-800 transition"
+            >
+              <Zap size={14} className="text-amber-400" />
+              <span className="text-xs text-neutral-300 font-medium">Command</span>
+              <span className="text-[10px] text-neutral-500">Center</span>
+            </button>
+            <button
+              onClick={() => router.push('/workforce')}
+              className="flex flex-col items-start gap-1 bg-neutral-900 border border-neutral-800 rounded-xl p-3 hover:bg-neutral-800 transition"
+            >
+              <Users size={14} className="text-blue-400" />
+              <span className="text-xs text-neutral-300 font-medium">AI</span>
+              <span className="text-[10px] text-neutral-500">Workforce</span>
+            </button>
+          </div>
         </div>
 
         <div className="space-y-4">
@@ -297,7 +328,6 @@ export default function Dashboard() {
           >
             <LogOut size={15} /> Sign out
           </button>
-
           <div className="border-t border-neutral-900 pt-4">
             {isPro ? (
               <div className="flex items-center justify-between text-xs text-indigo-400 font-semibold p-2.5 bg-indigo-950/30 rounded-xl border border-indigo-900/50">
@@ -318,6 +348,12 @@ export default function Dashboard() {
                     style={{ width: `${Math.min(100, (userInteractionCount / FREE_LIMIT) * 100)}%` }}
                   />
                 </div>
+                <button
+                  onClick={() => router.push('/billing')}
+                  className="w-full text-xs text-neutral-500 hover:text-white border border-neutral-800 rounded-lg py-1.5 transition hover:bg-neutral-900"
+                >
+                  Upgrade to Pro
+                </button>
               </div>
             )}
           </div>
@@ -330,10 +366,7 @@ export default function Dashboard() {
         {/* HEADER */}
         <header className="border-b border-neutral-900 px-4 py-3 flex justify-between items-center bg-neutral-950 flex-shrink-0">
           <div className="flex items-center gap-3">
-            <button
-              className="md:hidden text-neutral-400 hover:text-white transition"
-              onClick={() => setSidebarOpen(true)}
-            >
+            <button className="md:hidden text-neutral-400 hover:text-white transition" onClick={() => setSidebarOpen(true)}>
               <Menu size={18} />
             </button>
             <div>
@@ -341,8 +374,22 @@ export default function Dashboard() {
               <p className="text-[11px] text-neutral-500 hidden sm:block">Multi-agent execution</p>
             </div>
           </div>
+
+          {/* ✅ Header nav shortcuts for mobile */}
           <div className="flex items-center gap-2">
-            <div className="bg-neutral-900 border border-neutral-800 px-3 py-1.5 rounded-lg text-neutral-400 flex items-center gap-1.5 text-xs">
+            <button
+              onClick={() => router.push('/command-center')}
+              className="flex items-center gap-1.5 bg-neutral-900 border border-neutral-800 px-2.5 py-1.5 rounded-lg text-neutral-400 hover:text-white text-xs transition"
+            >
+              <Zap size={11} className="text-amber-400" /> Center
+            </button>
+            <button
+              onClick={() => router.push('/workforce')}
+              className="flex items-center gap-1.5 bg-neutral-900 border border-neutral-800 px-2.5 py-1.5 rounded-lg text-neutral-400 hover:text-white text-xs transition"
+            >
+              <Users size={11} className="text-blue-400" /> Workforce
+            </button>
+            <div className="bg-neutral-900 border border-neutral-800 px-2.5 py-1.5 rounded-lg text-neutral-400 flex items-center gap-1.5 text-xs">
               <Landmark size={11} className="text-neutral-500" />
               <span className="text-white font-mono font-semibold">Secure</span>
             </div>
@@ -360,8 +407,6 @@ export default function Dashboard() {
 
         {/* FOOTER */}
         <footer className="px-4 pt-3 pb-5 bg-neutral-950 border-t border-neutral-900 flex-shrink-0 space-y-3">
-
-          {/* QUICK ACTION CHIPS */}
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
             {quickActions.map(({ label, icon, color, action }) => (
               <button
@@ -374,10 +419,8 @@ export default function Dashboard() {
               </button>
             ))}
           </div>
-
-          {/* INPUT */}
           <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-            <div className="flex-1 relative">
+            <div className="flex-1">
               <input
                 ref={inputRef}
                 type="text"
@@ -400,4 +443,4 @@ export default function Dashboard() {
       </main>
     </div>
   );
-      }
+                             }
