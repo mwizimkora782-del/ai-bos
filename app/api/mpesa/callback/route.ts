@@ -5,61 +5,66 @@ import { createClient } from '@supabase/supabase-js';
 
 export async function POST(req: NextRequest) {
   try {
-    console.log("🔥 WEBHOOK HIT! Safaricom Daraja just pinged Vercel.");
+    console.log("🔥 WEBHOOK HIT — Safaricom callback received.");
     const payload = await req.json();
     console.log("📦 DARAJA PAYLOAD:", JSON.stringify(payload));
 
     const callbackData = payload?.Body?.stkCallback;
     if (!callbackData) {
-        console.error("❌ ERROR: Payload missing stkCallback. Daraja sent invalid data.");
-        return NextResponse.json({ error: "Invalid Payload" }, { status: 400 });
+      console.error("❌ Missing stkCallback in payload.");
+      return NextResponse.json({ error: "Invalid Payload" }, { status: 400 });
     }
 
     const resultCode = callbackData.ResultCode;
 
     if (resultCode !== 0) {
-        console.log(`⚠️ Payment cancelled or failed. ResultCode: ${resultCode}. Desc: ${callbackData.ResultDesc}`);
-        return NextResponse.json({ success: true });
+      console.log(`⚠️ Payment failed/cancelled. Code: ${resultCode}. Desc: ${callbackData.ResultDesc}`);
+      return NextResponse.json({ success: true });
     }
 
-    console.log("✅ PAYMENT SUCCESSFUL. Initializing Supabase Admin...");
+    // ✅ FIXED: Get the userId from AccountReference — not the latest profile
+    const userId = callbackData.CallbackMetadata?.Item?.find(
+      (item: any) => item.Name === 'AccountReference'
+    )?.Value || null;
+
+    // Also try from the top-level MerchantRequestID context
+    // Safaricom puts AccountReference inside CheckoutRequestID metadata
+    // So we also check the raw metadata array
+    const metadataItems: any[] = callbackData.CallbackMetadata?.Item ?? [];
+    const accountRef = metadataItems.find((i: any) => i.Name === 'AccountReference')?.Value
+      ?? callbackData.AccountReference
+      ?? userId;
+
+    console.log(`✅ Payment confirmed. Account Reference (userId): ${accountRef}`);
+
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-        console.error("❌ FATAL: Supabase keys are missing in the Vercel Vault.");
-        return NextResponse.json({ success: true, message: "Webhook received but DB update failed due to missing keys." });
+      console.error("❌ FATAL: Supabase keys missing.");
+      return NextResponse.json({ success: true, message: "Webhook received but DB update failed." });
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log("🔍 Searching database for the most recent user profile...");
-    const { data: latestUser, error: fetchError } = await supabase
-        .from('profiles')
-        .select('id')
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-    if (fetchError) {
-        console.error("❌ DB FETCH ERROR: Could not read profiles table:", fetchError);
-    } else if (latestUser && latestUser.length > 0) {
-        console.log(`🔓 Attempting to unlock PRO INSTANCE for user ID: ${latestUser[0].id}`);
-        
-        const { error: updateError } = await supabase
-            .from('profiles')
-            .update({ is_pro: true })
-            .eq('id', latestUser[0].id);
-            
-        if (updateError) {
-            console.error("❌ DB UPDATE ERROR: Failed to flip the is_pro switch:", updateError);
-        } else {
-            console.log("🎉 SUCCESS! ACCOUNT UPGRADED TO PRO.");
-        }
-    } else {
-        console.error("❌ DB ERROR: No users found in the 'profiles' table. Did the user register properly?");
+    if (!accountRef || accountRef === 'GUEST') {
+      console.error("❌ No valid userId in AccountReference. Cannot upgrade.");
+      return NextResponse.json({ success: true });
     }
 
-    // Always return 200 OK to prevent Daraja from spamming retries
+    // ✅ FIXED: Upgrade the EXACT user who paid using their userId
+    console.log(`🔓 Upgrading user ${accountRef} to PRO...`);
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ is_pro: true })
+      .eq('id', accountRef);
+
+    if (updateError) {
+      console.error("❌ DB UPDATE ERROR:", updateError);
+    } else {
+      console.log(`🎉 SUCCESS — User ${accountRef} is now PRO.`);
+    }
+
     return NextResponse.json({ success: true, message: "Webhook processed." });
 
   } catch (err: any) {
