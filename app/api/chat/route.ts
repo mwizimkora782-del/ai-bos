@@ -36,46 +36,40 @@ export async function POST(req: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // 1. Save the user's message — using 'sender' column
-    const { error: insertUserErr } = await supabase.from('messages').insert({
-      user_id: userId,
-      sender:  'user',        // ✅ fixed: was 'role'
+    // 1. Save user message — profile_id + sender + content
+    await supabase.from('messages').insert({
+      profile_id: userId,   // ✅ correct column name
+      sender: 'user',       // ✅ correct column name
       content: prompt,
     });
-    if (insertUserErr) throw insertUserErr;
 
-    // 2. Retrieve last 10 messages for context
+    // 2. Get last 10 messages for this user
     const { data: history, error: historyError } = await supabase
       .from('messages')
-      .select('sender, content')  // ✅ fixed: was 'role, content'
-      .eq('user_id', userId)
+      .select('sender, content')
+      .eq('profile_id', userId)   // ✅ correct column name
       .order('created_at', { ascending: false })
       .limit(10);
 
     if (historyError) throw historyError;
 
-    // 3. Format for Gemini (needs 'role' field, map from 'sender')
-    const formattedHistory = history.reverse().map(msg => ({
-      role:  msg.sender === 'user' ? 'user' : 'model',  // ✅ fixed: was msg.role
+    // 3. Format for Gemini — map sender → role
+    const formattedHistory = (history ?? []).reverse().map(msg => ({
+      role:  msg.sender === 'user' ? 'user' : 'model',
       parts: [{ text: msg.content }],
     }));
 
     // 4. Call Gemini 2.5 Flash
-    const geminiPayload = {
-      system_instruction: { parts: { text: SYSTEM_PROMPT } },
-      contents: formattedHistory,
-      generationConfig: {
-        temperature:     0.7,
-        maxOutputTokens: 2048,
-      },
-    };
-
     const geminiResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
       {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(geminiPayload),
+        body: JSON.stringify({
+          system_instruction: { parts: { text: SYSTEM_PROMPT } },
+          contents: formattedHistory,
+          generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
+        }),
       }
     );
 
@@ -88,13 +82,12 @@ export async function POST(req: NextRequest) {
 
     const aiTextResponse = geminiData.candidates[0].content.parts[0].text;
 
-    // 5. Save AI response — using 'sender' column
-    const { error: insertAiErr } = await supabase.from('messages').insert({
-      user_id: userId,
-      sender:  'model',       // ✅ fixed: was 'role'
+    // 5. Save AI response
+    await supabase.from('messages').insert({
+      profile_id: userId,   // ✅ correct column name
+      sender: 'model',      // ✅ correct column name
       content: aiTextResponse,
     });
-    if (insertAiErr) throw insertAiErr;
 
     return NextResponse.json({ success: true, reply: aiTextResponse });
 
@@ -117,8 +110,8 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await supabase
       .from('messages')
-      .select('sender, content')   // ✅ fixed: was 'role, content'
-      .eq('user_id', userId)
+      .select('sender, content')
+      .eq('profile_id', userId)   // ✅ correct column name
       .order('created_at', { ascending: true });
 
     if (error) throw error;
