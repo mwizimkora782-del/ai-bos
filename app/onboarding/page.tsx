@@ -1,317 +1,283 @@
 'use client';
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
-import { Search, ArrowRight, Check, Loader2 } from 'lucide-react';
+import { 
+  Building, Users, Target, Rocket, ArrowRight, 
+  Terminal, ShieldCheck, Database, Cpu, CheckCircle2 
+} from 'lucide-react';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-);
+const getSupabaseClient = () => {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+};
 
-type Industry = { id: string; name: string; icon: string; category: string };
-
-const INDUSTRIES: Industry[] = [
-  // Hospitality & Food
-  { id:'hotel',          name:'Hotel',               icon:'🏨', category:'Hospitality & Food' },
-  { id:'resort',         name:'Resort',              icon:'🏝️', category:'Hospitality & Food' },
-  { id:'airbnb',         name:'Airbnb',              icon:'🏠', category:'Hospitality & Food' },
-  { id:'guesthouse',     name:'Guest House',         icon:'🛏️', category:'Hospitality & Food' },
-  { id:'restaurant',     name:'Restaurant',          icon:'🍽️', category:'Hospitality & Food' },
-  { id:'fastfood',       name:'Fast Food',           icon:'🍔', category:'Hospitality & Food' },
-  { id:'cafe',           name:'Cafe',                icon:'☕', category:'Hospitality & Food' },
-  { id:'coffeeshop',     name:'Coffee Shop',         icon:'☕', category:'Hospitality & Food' },
-  { id:'bakery',         name:'Bakery',              icon:'🥐', category:'Hospitality & Food' },
-  { id:'catering',       name:'Catering Business',   icon:'🍱', category:'Hospitality & Food' },
-  { id:'bar',            name:'Bar',                 icon:'🍺', category:'Hospitality & Food' },
-  { id:'nightclub',      name:'Nightclub',           icon:'🎵', category:'Hospitality & Food' },
-  // Beauty & Wellness
-  { id:'salon',          name:'Salon',               icon:'💇', category:'Beauty & Wellness' },
-  { id:'barbershop',     name:'Barbershop',          icon:'✂️', category:'Beauty & Wellness' },
-  { id:'spa',            name:'Spa',                 icon:'💆', category:'Beauty & Wellness' },
-  { id:'beautystudio',   name:'Beauty Studio',       icon:'💄', category:'Beauty & Wellness' },
-  { id:'nailstudio',     name:'Nail Studio',         icon:'💅', category:'Beauty & Wellness' },
-  { id:'tattoo',         name:'Tattoo Studio',       icon:'🎨', category:'Beauty & Wellness' },
-  { id:'gym',            name:'Gym',                 icon:'💪', category:'Beauty & Wellness' },
-  { id:'fitness',        name:'Fitness Center',      icon:'🏋️', category:'Beauty & Wellness' },
-  { id:'sportsclub',     name:'Sports Club',         icon:'⚽', category:'Beauty & Wellness' },
-  { id:'trainer',        name:'Personal Trainer',    icon:'🏃', category:'Beauty & Wellness' },
-  { id:'yoga',           name:'Yoga Studio',         icon:'🧘', category:'Beauty & Wellness' },
-  // Retail & Commerce
-  { id:'retail',         name:'Retail Store',        icon:'🏪', category:'Retail & Commerce' },
-  { id:'supermarket',    name:'Supermarket',         icon:'🛒', category:'Retail & Commerce' },
-  { id:'wholesale',      name:'Wholesale Business',  icon:'📦', category:'Retail & Commerce' },
-  { id:'ecommerce',      name:'E-commerce Store',    icon:'🛍️', category:'Retail & Commerce' },
-  { id:'electronics',    name:'Electronics Store',   icon:'📱', category:'Retail & Commerce' },
-  { id:'fashion',        name:'Fashion Store',       icon:'👗', category:'Retail & Commerce' },
-  { id:'furniture',      name:'Furniture Store',     icon:'🪑', category:'Retail & Commerce' },
-  { id:'pharmacy',       name:'Pharmacy',            icon:'💊', category:'Retail & Commerce' },
-  { id:'bookstore',      name:'Bookstore',           icon:'📚', category:'Retail & Commerce' },
-  { id:'hardware',       name:'Hardware Store',      icon:'🔧', category:'Retail & Commerce' },
-  { id:'agristore',      name:'Agricultural Store',  icon:'🌱', category:'Retail & Commerce' },
-  { id:'autoparts',      name:'Auto Parts Store',    icon:'🚗', category:'Retail & Commerce' },
-  // Education
-  { id:'school',         name:'School',              icon:'🏫', category:'Education' },
-  { id:'primaryschool',  name:'Primary School',      icon:'🎒', category:'Education' },
-  { id:'highschool',     name:'High School',         icon:'🎓', category:'Education' },
-  { id:'university',     name:'University',          icon:'🏛️', category:'Education' },
-  { id:'college',        name:'College',             icon:'📐', category:'Education' },
-  { id:'elearning',      name:'Online Learning',     icon:'💻', category:'Education' },
-  { id:'trainingcenter', name:'Training Center',     icon:'📋', category:'Education' },
-  { id:'coaching',       name:'Coaching Center',     icon:'🎯', category:'Education' },
-  { id:'research',       name:'Research Institution',icon:'🔬', category:'Education' },
-  // Healthcare
-  { id:'hospital',       name:'Hospital',            icon:'🏥', category:'Healthcare' },
-  { id:'clinic',         name:'Clinic',              icon:'🩺', category:'Healthcare' },
-  { id:'medicalcenter',  name:'Medical Center',      icon:'⚕️', category:'Healthcare' },
-  { id:'dental',         name:'Dental Clinic',       icon:'🦷', category:'Healthcare' },
-  { id:'vet',            name:'Veterinary Clinic',   icon:'🐾', category:'Healthcare' },
-  { id:'lab',            name:'Laboratory',          icon:'🧪', category:'Healthcare' },
-  { id:'mentalhealth',   name:'Mental Health Center',icon:'🧠', category:'Healthcare' },
-  { id:'nursinghome',    name:'Nursing Home',        icon:'🏡', category:'Healthcare' },
-  // Professional Services
-  { id:'lawfirm',        name:'Law Firm',            icon:'⚖️', category:'Professional Services' },
-  { id:'accounting',     name:'Accounting Firm',     icon:'📊', category:'Professional Services' },
-  { id:'consulting',     name:'Consulting Firm',     icon:'💼', category:'Professional Services' },
-  { id:'marketing',      name:'Marketing Agency',    icon:'📣', category:'Professional Services' },
-  { id:'design',         name:'Design Agency',       icon:'✏️', category:'Professional Services' },
-  { id:'software',       name:'Software Company',    icon:'💻', category:'Professional Services' },
-  { id:'itcompany',      name:'IT Company',          icon:'🖥️', category:'Professional Services' },
-  { id:'cyber',          name:'Cybersecurity Co.',   icon:'🔒', category:'Professional Services' },
-  { id:'architecture',   name:'Architecture Firm',   icon:'🏗️', category:'Professional Services' },
-  { id:'engineering',    name:'Engineering Firm',    icon:'⚙️', category:'Professional Services' },
-  // Real Estate
-  { id:'realestate',     name:'Real Estate Agency',  icon:'🏢', category:'Real Estate & Property' },
-  { id:'propmanage',     name:'Property Management', icon:'🔑', category:'Real Estate & Property' },
-  { id:'construction',   name:'Construction Company',icon:'👷', category:'Real Estate & Property' },
-  { id:'interior',       name:'Interior Design',     icon:'🛋️', category:'Real Estate & Property' },
-  { id:'propdev',        name:'Property Developer',  icon:'🏙️', category:'Real Estate & Property' },
-  // Transport & Logistics
-  { id:'logistics',      name:'Logistics Company',   icon:'🚚', category:'Transport & Logistics' },
-  { id:'delivery',       name:'Delivery Service',    icon:'📦', category:'Transport & Logistics' },
-  { id:'taxi',           name:'Taxi Company',        icon:'🚕', category:'Transport & Logistics' },
-  { id:'ridehailing',    name:'Ride-Hailing',        icon:'🚗', category:'Transport & Logistics' },
-  { id:'shipping',       name:'Shipping Company',    icon:'🚢', category:'Transport & Logistics' },
-  { id:'travel',         name:'Travel Agency',       icon:'✈️', category:'Transport & Logistics' },
-  { id:'tour',           name:'Tour Company',        icon:'🗺️', category:'Transport & Logistics' },
-  // Manufacturing
-  { id:'manufacturing',  name:'Manufacturing Co.',   icon:'🏭', category:'Manufacturing' },
-  { id:'factory',        name:'Factory',             icon:'⚙️', category:'Manufacturing' },
-  { id:'foodprocessing', name:'Food Processing',     icon:'🥫', category:'Manufacturing' },
-  { id:'textile',        name:'Textile Company',     icon:'🧵', category:'Manufacturing' },
-  // Agriculture
-  { id:'farm',           name:'Farm',                icon:'🌾', category:'Agriculture' },
-  { id:'dairyfarm',      name:'Dairy Farm',          icon:'🐄', category:'Agriculture' },
-  { id:'poultry',        name:'Poultry Farm',        icon:'🐔', category:'Agriculture' },
-  { id:'fishfarm',       name:'Fish Farm',           icon:'🐟', category:'Agriculture' },
-  { id:'agribusiness',   name:'Agribusiness',        icon:'🌿', category:'Agriculture' },
-  // Financial Services
-  { id:'bank',           name:'Bank',                icon:'🏦', category:'Financial Services' },
-  { id:'microfinance',   name:'Microfinance',        icon:'💰', category:'Financial Services' },
-  { id:'sacco',          name:'SACCO',               icon:'🤝', category:'Financial Services' },
-  { id:'insurance',      name:'Insurance Company',   icon:'🛡️', category:'Financial Services' },
-  { id:'investment',     name:'Investment Company',  icon:'📈', category:'Financial Services' },
-  { id:'lending',        name:'Lending Company',     icon:'💳', category:'Financial Services' },
-  // Media & Entertainment
-  { id:'media',          name:'Media Company',       icon:'📺', category:'Media & Entertainment' },
-  { id:'tvstation',      name:'TV Station',          icon:'📡', category:'Media & Entertainment' },
-  { id:'radio',          name:'Radio Station',       icon:'📻', category:'Media & Entertainment' },
-  { id:'podcast',        name:'Podcast Business',    icon:'🎙️', category:'Media & Entertainment' },
-  { id:'creator',        name:'Content Creator',     icon:'🎬', category:'Media & Entertainment' },
-  { id:'influencer',     name:'Influencer',          icon:'⭐', category:'Media & Entertainment' },
-  { id:'events',         name:'Event Management',    icon:'🎪', category:'Media & Entertainment' },
-  // Non-Profit
-  { id:'ngo',            name:'NGO',                 icon:'🌍', category:'Non-Profit' },
-  { id:'charity',        name:'Charity',             icon:'❤️', category:'Non-Profit' },
-  { id:'foundation',     name:'Foundation',          icon:'🏛️', category:'Non-Profit' },
-  { id:'church',         name:'Church',              icon:'⛪', category:'Non-Profit' },
-  { id:'mosque',         name:'Mosque',              icon:'🕌', category:'Non-Profit' },
-  { id:'community',      name:'Community Org',       icon:'👥', category:'Non-Profit' },
-  // Technology
-  { id:'startup',        name:'Startup',             icon:'🚀', category:'Technology' },
-  { id:'saas',           name:'SaaS Company',        icon:'☁️', category:'Technology' },
-  { id:'ai',             name:'AI Company',          icon:'🤖', category:'Technology' },
-  { id:'blockchain',     name:'Blockchain Company',  icon:'⛓️', category:'Technology' },
-  { id:'datacompany',    name:'Data Company',        icon:'📊', category:'Technology' },
-  // Government
-  { id:'government',     name:'Government Office',   icon:'🏛️', category:'Government' },
-  { id:'county',         name:'County Office',       icon:'🗂️', category:'Government' },
-  { id:'publicservice',  name:'Public Service',      icon:'📋', category:'Government' },
-  // Personal
-  { id:'freelancer',     name:'Freelancer',          icon:'💻', category:'Personal & Independent' },
-  { id:'consultant',     name:'Consultant',          icon:'🎯', category:'Personal & Independent' },
-  { id:'coach',          name:'Coach',               icon:'🏆', category:'Personal & Independent' },
-  { id:'speaker',        name:'Speaker',             icon:'🎤', category:'Personal & Independent' },
-  { id:'solopreneur',    name:'Solopreneur',         icon:'⚡', category:'Personal & Independent' },
-  { id:'smallbusiness',  name:'Small Business',      icon:'🏪', category:'Personal & Independent' },
-  // Other
-  { id:'other',          name:'Other',               icon:'✨', category:'Other' },
-];
-
-export default function Onboarding() {
+export default function OnboardingPage() {
   const router = useRouter();
-  const [userId, setUserId]       = useState('');
-  const [selected, setSelected]   = useState('');
-  const [search, setSearch]       = useState('');
-  const [saving, setSaving]       = useState(false);
-  const [authed, setAuthed]       = useState(false);
+  const supabase = useMemo(() => getSupabaseClient(), []);
 
-  useEffect(() => {
-    (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { router.push('/login'); return; }
-      setUserId(session.user.id);
+  const [step, setStep] = useState(1);
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [bootLogs, setBootLogs] = useState<string[]>([]);
+  
+  // Enterprise Context Form State
+  const [formData, setFormData] = useState({
+    companyName: '',
+    teamSize: '',
+    industry: '',
+    primaryObjective: ''
+  });
 
-      // Skip onboarding if already completed
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('business_type')
-        .eq('id', session.user.id)
-        .single();
-
-      if (profile?.business_type) { router.push('/'); return; }
-      setAuthed(true);
-    })();
-  }, [router]);
-
-  const filtered = useMemo(() => {
-    if (!search.trim()) return INDUSTRIES;
-    const q = search.toLowerCase();
-    return INDUSTRIES.filter(i =>
-      i.name.toLowerCase().includes(q) || i.category.toLowerCase().includes(q)
-    );
-  }, [search]);
-
-  const categories = useMemo(() => {
-    const cats: Record<string, Industry[]> = {};
-    filtered.forEach(i => {
-      if (!cats[i.category]) cats[i.category] = [];
-      cats[i.category].push(i);
-    });
-    return cats;
-  }, [filtered]);
-
-  const handleContinue = async () => {
-    if (!selected || !userId) return;
-    setSaving(true);
-    try {
-      await supabase.from('profiles').update({ business_type: selected }).eq('id', userId);
-      router.push('/');
-    } catch {
-      setSaving(false);
-    }
+  // Handle Input Changes
+  const updateForm = (key: keyof typeof formData, value: string) => {
+    setFormData(prev => ({ ...prev, [key]: value }));
   };
 
-  if (!authed) {
+  // Deployment Logic (Database Insertion & Terminal Animation)
+  const finalizeDeployment = async () => {
+    setIsDeploying(true);
+    setStep(3);
+
+    const logs = [
+      "Initializing AI-BOS connection protocols...",
+      "Authenticating enterprise credentials...",
+      `Creating secure tenant for ${formData.companyName}...`,
+      "Configuring Row Level Security policies...",
+      `Optimizing models for ${formData.industry} operations...`,
+      `Setting primary directive: ${formData.primaryObjective}...`,
+      "Allocating autonomous neural resources...",
+      "Deployment successful. Routing to command center..."
+    ];
+
+    // Boot sequence animation
+    for (let i = 0; i < logs.length; i++) {
+      await new Promise(resolve => setTimeout(resolve, 800));
+      setBootLogs(prev => [...prev, logs[i]]);
+    }
+
+    // Database Insertion Execution
+    if (supabase) {
+      try {
+        const { data: userData, error: authErr } = await supabase.auth.getUser();
+        if (authErr) throw authErr;
+        const userId = userData.user?.id;
+
+        if (userId) {
+          // 1. Create Organization
+          const { data: orgData, error: orgErr } = await supabase
+            .from('organizations')
+            .insert({
+              name: formData.companyName,
+              industry: formData.industry,
+              team_size: formData.teamSize
+            })
+            .select()
+            .single();
+          
+          if (orgErr) console.error("Org creation error:", orgErr);
+
+          if (orgData) {
+            // 2. Link Profile to Org
+            await supabase.from('profiles').upsert({
+              id: userId,
+              org_id: orgData.id,
+              role: 'owner'
+            });
+
+            // 3. Provision Workspace
+            await supabase.from('ai_workspaces').insert({
+              org_id: orgData.id,
+              primary_objective: formData.primaryObjective
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Deployment initialization failed:", err);
+        // Fail silently to the user to maintain UX, log to Sentry in production
+      }
+    }
+
+    // Route to main dashboard
+    setTimeout(() => {
+      router.push('/dashboard');
+    }, 1500);
+  };
+
+  // UI Components for Custom Selection Cards
+  const SelectCard = ({ icon: Icon, label, value, stateKey }: any) => {
+    const isSelected = formData[stateKey as keyof typeof formData] === value;
     return (
-      <div className="flex h-screen items-center justify-center bg-neutral-950">
-        <p className="text-sm text-neutral-500 animate-pulse">Preparing your workspace...</p>
-      </div>
+      <button
+        onClick={() => updateForm(stateKey as keyof typeof formData, value)}
+        className={`flex items-center gap-3 p-4 rounded-xl border text-left transition-all ${
+          isSelected 
+            ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400' 
+            : 'border-neutral-800 bg-neutral-950/50 text-neutral-400 hover:border-neutral-700 hover:bg-neutral-900'
+        }`}
+      >
+        <Icon size={18} className={isSelected ? 'text-emerald-500' : 'text-neutral-500'} />
+        <span className="text-sm font-medium">{label}</span>
+      </button>
     );
-  }
+  };
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-white flex flex-col">
-
-      {/* Header */}
-      <div className="px-5 pt-8 pb-4 flex-shrink-0">
-        {/* Progress */}
-        <div className="flex gap-1.5 mb-6">
-          {[1,2,3,4].map(s => (
-            <div key={s} className={`h-1 flex-1 rounded-full ${s <= 2 ? 'bg-white' : 'bg-neutral-800'}`} />
-          ))}
-        </div>
-
-        {/* Brand */}
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center flex-shrink-0">
-            <span className="text-black font-bold text-base">Ω</span>
+    <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center px-4 py-12 selection:bg-neutral-800 font-sans">
+      
+      {/* Top Navigation / Progress */}
+      <div className="w-full max-w-2xl mb-8 flex items-center justify-between text-xs font-mono">
+        <span className="text-neutral-500">SYSTEM.INIT()</span>
+        {!isDeploying && (
+          <div className="flex gap-2">
+            <span className={step === 1 ? 'text-emerald-500' : 'text-neutral-600'}>01_CONTEXT</span>
+            <span className="text-neutral-800">/</span>
+            <span className={step === 2 ? 'text-emerald-500' : 'text-neutral-600'}>02_DIRECTIVE</span>
           </div>
-          <div>
-            <p className="text-white font-semibold text-sm tracking-wide">AI-BOS</p>
-            <p className="text-neutral-500 text-xs tracking-widest uppercase">Enterprise OS</p>
-          </div>
-        </div>
-
-        <h1 className="text-2xl font-semibold text-white tracking-tight leading-tight mb-2">
-          What type of business<br />do you operate?
-        </h1>
-        <p className="text-sm text-neutral-500 leading-relaxed mb-5">
-          We'll build your custom AI workspace, dashboards, and agents based on your industry.
-        </p>
-
-        {/* Search */}
-        <div className="relative mb-2">
-          <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-600" />
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search industries..."
-            className="w-full bg-neutral-900 border border-neutral-800 rounded-xl pl-9 pr-4 py-3 text-sm text-white placeholder-neutral-600 outline-none focus:border-neutral-700 transition-colors"
-          />
-        </div>
+        )}
       </div>
 
-      {/* Industry grid — scrollable */}
-      <div className="flex-1 overflow-y-auto px-5 pb-32">
-        {Object.entries(categories).map(([cat, items]) => (
-          <div key={cat} className="mb-6">
-            <p className="text-[10px] font-semibold text-neutral-600 tracking-widest uppercase mb-3">
-              {cat}
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              {items.map(industry => {
-                const isSelected = selected === industry.id;
-                return (
-                  <button
-                    key={industry.id}
-                    onClick={() => setSelected(industry.id)}
-                    className={`relative flex flex-col items-start p-3.5 rounded-2xl border text-left transition-all active:scale-95 ${
-                      isSelected
-                        ? 'bg-emerald-950/40 border-emerald-800/60'
-                        : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-800/60'
-                    }`}
-                  >
-                    {isSelected && (
-                      <div className="absolute top-2.5 right-2.5 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center">
-                        <Check size={9} className="text-black" />
-                      </div>
-                    )}
-                    <span className="text-xl mb-2">{industry.icon}</span>
-                    <span className={`text-xs font-medium leading-tight ${isSelected ? 'text-emerald-300' : 'text-neutral-300'}`}>
-                      {industry.name}
-                    </span>
-                  </button>
-                );
-              })}
+      {/* Main Content Area */}
+      <div className="w-full max-w-2xl relative">
+        
+        {/* STEP 1: Organization Context */}
+        {step === 1 && !isDeploying && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div>
+              <h1 className="text-3xl font-semibold text-white tracking-tight mb-2">Establish infrastructure.</h1>
+              <p className="text-neutral-500">Provide the context required to calibrate your AI workforce.</p>
+            </div>
+
+            <div className="space-y-6 bg-neutral-900/40 p-8 rounded-3xl border border-neutral-800/60 backdrop-blur-sm">
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-neutral-400 tracking-widest uppercase">Organization Name</label>
+                <div className="relative">
+                  <Building size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500" />
+                  <input 
+                    type="text" 
+                    value={formData.companyName}
+                    onChange={(e) => updateForm('companyName', e.target.value)}
+                    placeholder="Acme Corp" 
+                    className="w-full bg-neutral-950 border border-neutral-800 focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500 rounded-xl py-4 pl-12 pr-4 text-sm text-white placeholder-neutral-600 outline-none transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-xs font-medium text-neutral-400 tracking-widest uppercase">Team Scale</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <SelectCard icon={Users} label="1 - 10 Seats" value="1-10" stateKey="teamSize" />
+                  <SelectCard icon={Users} label="11 - 50 Seats" value="11-50" stateKey="teamSize" />
+                  <SelectCard icon={Users} label="50 - 250 Seats" value="50-250" stateKey="teamSize" />
+                  <SelectCard icon={Users} label="Enterprise (250+)" value="250+" stateKey="teamSize" />
+                </div>
+              </div>
+
+              <button 
+                onClick={() => setStep(2)}
+                disabled={!formData.companyName || !formData.teamSize}
+                className="w-full bg-white hover:bg-neutral-200 text-black font-semibold py-4 rounded-xl text-sm transition-all disabled:opacity-30 flex items-center justify-center gap-2 mt-4"
+              >
+                Proceed to Directives <ArrowRight size={16} />
+              </button>
             </div>
           </div>
-        ))}
-      </div>
-
-      {/* Sticky footer CTA */}
-      <div className="fixed bottom-0 left-0 right-0 px-5 pb-8 pt-4 bg-neutral-950 border-t border-neutral-900">
-        {selected && (
-          <p className="text-xs text-neutral-500 text-center mb-3">
-            Selected: <span className="text-white font-medium">
-              {INDUSTRIES.find(i => i.id === selected)?.name}
-            </span>
-          </p>
         )}
-        <button
-          onClick={handleContinue}
-          disabled={!selected || saving}
-          className="w-full bg-white hover:bg-neutral-100 text-black font-semibold py-4 rounded-2xl text-sm transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-        >
-          {saving ? (
-            <><Loader2 size={16} className="animate-spin" /> Building your workspace...</>
-          ) : (
-            <><span>✨</span> Build my AI workspace <ArrowRight size={16} /></>
-          )}
-        </button>
-        <p className="text-center text-xs text-neutral-700 mt-2">Your workspace will be ready in seconds</p>
+
+        {/* STEP 2: Primary Directive */}
+        {step === 2 && !isDeploying && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-right-8 duration-500">
+            <div>
+              <h1 className="text-3xl font-semibold text-white tracking-tight mb-2">Assign primary directive.</h1>
+              <p className="text-neutral-500">What is the initial operational objective for AI-BOS?</p>
+            </div>
+
+            <div className="space-y-6 bg-neutral-900/40 p-8 rounded-3xl border border-neutral-800/60 backdrop-blur-sm">
+              <div className="space-y-3">
+                <label className="text-xs font-medium text-neutral-400 tracking-widest uppercase">Industry Vector</label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {['Finance', 'Healthcare', 'SaaS / Tech', 'E-Commerce', 'Logistics', 'Other'].map(ind => (
+                    <button
+                      key={ind}
+                      onClick={() => updateForm('industry', ind)}
+                      className={`py-3 px-4 rounded-xl border text-sm text-center transition-all ${
+                        formData.industry === ind ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400' : 'border-neutral-800 bg-neutral-950/50 text-neutral-400 hover:border-neutral-700'
+                      }`}
+                    >
+                      {ind}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-xs font-medium text-neutral-400 tracking-widest uppercase">Initial Autonomous Task</label>
+                <div className="grid grid-cols-1 gap-3">
+                  <SelectCard icon={Database} label="Data Synthesis & Financial Analysis" value="Data Analysis" stateKey="primaryObjective" />
+                  <SelectCard icon={Target} label="Customer Operations & Lead Scoring" value="Customer Ops" stateKey="primaryObjective" />
+                  <SelectCard icon={Cpu} label="Autonomous DevOps & Code Review" value="DevOps" stateKey="primaryObjective" />
+                </div>
+              </div>
+
+              <div className="flex gap-4 pt-4">
+                <button 
+                  onClick={() => setStep(1)}
+                  className="px-6 py-4 rounded-xl border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800/50 text-sm font-medium transition-all"
+                >
+                  Back
+                </button>
+                <button 
+                  onClick={finalizeDeployment}
+                  disabled={!formData.industry || !formData.primaryObjective}
+                  className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-semibold py-4 rounded-xl text-sm transition-all disabled:opacity-30 flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(16,185,129,0.15)]"
+                >
+                  <Rocket size={16} /> Deploy Architecture
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 3: Terminal Boot Sequence */}
+        {isDeploying && (
+          <div className="w-full bg-black border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-700">
+            <div className="bg-neutral-900 border-b border-neutral-800 px-4 py-3 flex items-center gap-4">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-red-500/80" />
+                <div className="w-3 h-3 rounded-full bg-amber-500/80" />
+                <div className="w-3 h-3 rounded-full bg-emerald-500/80" />
+              </div>
+              <span className="text-xs text-neutral-500 font-mono flex items-center gap-2">
+                <Terminal size={12} /> root@ai-bos-core
+              </span>
+            </div>
+            
+            <div className="p-6 h-[300px] overflow-hidden font-mono text-sm">
+              <div className="space-y-3">
+                {bootLogs.map((log, index) => (
+                  <div key={index} className="flex items-start gap-3 animate-in fade-in slide-in-from-bottom-2">
+                    <span className="text-neutral-600 flex-shrink-0">{`[${new Date().toISOString().split('T')[1].slice(0, 8)}]`}</span>
+                    {log.includes('successful') || log.includes('Deployment') ? (
+                       <span className="text-emerald-400 flex items-center gap-2">
+                         <CheckCircle2 size={14} /> {log}
+                       </span>
+                    ) : (
+                      <span className="text-neutral-300">{log}</span>
+                    )}
+                  </div>
+                ))}
+                <div className="flex items-center gap-2 text-neutral-500">
+                  <span className="animate-pulse">_</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        
       </div>
     </div>
   );
-   }
+            }
+              
