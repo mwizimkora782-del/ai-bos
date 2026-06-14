@@ -1,363 +1,317 @@
 'use client';
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
-import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Building2, Scissors, Stethoscope, GraduationCap, 
-  Briefcase, ShoppingCart, Scale, Plus, CheckCircle2, 
-  ArrowRight, Sparkles, ChevronRight, LayoutDashboard 
-} from 'lucide-react';
+import { Search, ArrowRight, Check, Loader2 } from 'lucide-react';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 );
 
-// --- Data for our selections ---
-const businessTypes = [
-  { id: 'Hotel', icon: Building2 },
-  { id: 'Salon', icon: Scissors },
-  { id: 'Hospital', icon: Stethoscope },
-  { id: 'School', icon: GraduationCap },
-  { id: 'Agency', icon: Briefcase },
-  { id: 'E-commerce', icon: ShoppingCart },
-  { id: 'Law Firm', icon: Scale },
-  { id: 'Other', icon: Plus },
+type Industry = { id: string; name: string; icon: string; category: string };
+
+const INDUSTRIES: Industry[] = [
+  // Hospitality & Food
+  { id:'hotel',          name:'Hotel',               icon:'🏨', category:'Hospitality & Food' },
+  { id:'resort',         name:'Resort',              icon:'🏝️', category:'Hospitality & Food' },
+  { id:'airbnb',         name:'Airbnb',              icon:'🏠', category:'Hospitality & Food' },
+  { id:'guesthouse',     name:'Guest House',         icon:'🛏️', category:'Hospitality & Food' },
+  { id:'restaurant',     name:'Restaurant',          icon:'🍽️', category:'Hospitality & Food' },
+  { id:'fastfood',       name:'Fast Food',           icon:'🍔', category:'Hospitality & Food' },
+  { id:'cafe',           name:'Cafe',                icon:'☕', category:'Hospitality & Food' },
+  { id:'coffeeshop',     name:'Coffee Shop',         icon:'☕', category:'Hospitality & Food' },
+  { id:'bakery',         name:'Bakery',              icon:'🥐', category:'Hospitality & Food' },
+  { id:'catering',       name:'Catering Business',   icon:'🍱', category:'Hospitality & Food' },
+  { id:'bar',            name:'Bar',                 icon:'🍺', category:'Hospitality & Food' },
+  { id:'nightclub',      name:'Nightclub',           icon:'🎵', category:'Hospitality & Food' },
+  // Beauty & Wellness
+  { id:'salon',          name:'Salon',               icon:'💇', category:'Beauty & Wellness' },
+  { id:'barbershop',     name:'Barbershop',          icon:'✂️', category:'Beauty & Wellness' },
+  { id:'spa',            name:'Spa',                 icon:'💆', category:'Beauty & Wellness' },
+  { id:'beautystudio',   name:'Beauty Studio',       icon:'💄', category:'Beauty & Wellness' },
+  { id:'nailstudio',     name:'Nail Studio',         icon:'💅', category:'Beauty & Wellness' },
+  { id:'tattoo',         name:'Tattoo Studio',       icon:'🎨', category:'Beauty & Wellness' },
+  { id:'gym',            name:'Gym',                 icon:'💪', category:'Beauty & Wellness' },
+  { id:'fitness',        name:'Fitness Center',      icon:'🏋️', category:'Beauty & Wellness' },
+  { id:'sportsclub',     name:'Sports Club',         icon:'⚽', category:'Beauty & Wellness' },
+  { id:'trainer',        name:'Personal Trainer',    icon:'🏃', category:'Beauty & Wellness' },
+  { id:'yoga',           name:'Yoga Studio',         icon:'🧘', category:'Beauty & Wellness' },
+  // Retail & Commerce
+  { id:'retail',         name:'Retail Store',        icon:'🏪', category:'Retail & Commerce' },
+  { id:'supermarket',    name:'Supermarket',         icon:'🛒', category:'Retail & Commerce' },
+  { id:'wholesale',      name:'Wholesale Business',  icon:'📦', category:'Retail & Commerce' },
+  { id:'ecommerce',      name:'E-commerce Store',    icon:'🛍️', category:'Retail & Commerce' },
+  { id:'electronics',    name:'Electronics Store',   icon:'📱', category:'Retail & Commerce' },
+  { id:'fashion',        name:'Fashion Store',       icon:'👗', category:'Retail & Commerce' },
+  { id:'furniture',      name:'Furniture Store',     icon:'🪑', category:'Retail & Commerce' },
+  { id:'pharmacy',       name:'Pharmacy',            icon:'💊', category:'Retail & Commerce' },
+  { id:'bookstore',      name:'Bookstore',           icon:'📚', category:'Retail & Commerce' },
+  { id:'hardware',       name:'Hardware Store',      icon:'🔧', category:'Retail & Commerce' },
+  { id:'agristore',      name:'Agricultural Store',  icon:'🌱', category:'Retail & Commerce' },
+  { id:'autoparts',      name:'Auto Parts Store',    icon:'🚗', category:'Retail & Commerce' },
+  // Education
+  { id:'school',         name:'School',              icon:'🏫', category:'Education' },
+  { id:'primaryschool',  name:'Primary School',      icon:'🎒', category:'Education' },
+  { id:'highschool',     name:'High School',         icon:'🎓', category:'Education' },
+  { id:'university',     name:'University',          icon:'🏛️', category:'Education' },
+  { id:'college',        name:'College',             icon:'📐', category:'Education' },
+  { id:'elearning',      name:'Online Learning',     icon:'💻', category:'Education' },
+  { id:'trainingcenter', name:'Training Center',     icon:'📋', category:'Education' },
+  { id:'coaching',       name:'Coaching Center',     icon:'🎯', category:'Education' },
+  { id:'research',       name:'Research Institution',icon:'🔬', category:'Education' },
+  // Healthcare
+  { id:'hospital',       name:'Hospital',            icon:'🏥', category:'Healthcare' },
+  { id:'clinic',         name:'Clinic',              icon:'🩺', category:'Healthcare' },
+  { id:'medicalcenter',  name:'Medical Center',      icon:'⚕️', category:'Healthcare' },
+  { id:'dental',         name:'Dental Clinic',       icon:'🦷', category:'Healthcare' },
+  { id:'vet',            name:'Veterinary Clinic',   icon:'🐾', category:'Healthcare' },
+  { id:'lab',            name:'Laboratory',          icon:'🧪', category:'Healthcare' },
+  { id:'mentalhealth',   name:'Mental Health Center',icon:'🧠', category:'Healthcare' },
+  { id:'nursinghome',    name:'Nursing Home',        icon:'🏡', category:'Healthcare' },
+  // Professional Services
+  { id:'lawfirm',        name:'Law Firm',            icon:'⚖️', category:'Professional Services' },
+  { id:'accounting',     name:'Accounting Firm',     icon:'📊', category:'Professional Services' },
+  { id:'consulting',     name:'Consulting Firm',     icon:'💼', category:'Professional Services' },
+  { id:'marketing',      name:'Marketing Agency',    icon:'📣', category:'Professional Services' },
+  { id:'design',         name:'Design Agency',       icon:'✏️', category:'Professional Services' },
+  { id:'software',       name:'Software Company',    icon:'💻', category:'Professional Services' },
+  { id:'itcompany',      name:'IT Company',          icon:'🖥️', category:'Professional Services' },
+  { id:'cyber',          name:'Cybersecurity Co.',   icon:'🔒', category:'Professional Services' },
+  { id:'architecture',   name:'Architecture Firm',   icon:'🏗️', category:'Professional Services' },
+  { id:'engineering',    name:'Engineering Firm',    icon:'⚙️', category:'Professional Services' },
+  // Real Estate
+  { id:'realestate',     name:'Real Estate Agency',  icon:'🏢', category:'Real Estate & Property' },
+  { id:'propmanage',     name:'Property Management', icon:'🔑', category:'Real Estate & Property' },
+  { id:'construction',   name:'Construction Company',icon:'👷', category:'Real Estate & Property' },
+  { id:'interior',       name:'Interior Design',     icon:'🛋️', category:'Real Estate & Property' },
+  { id:'propdev',        name:'Property Developer',  icon:'🏙️', category:'Real Estate & Property' },
+  // Transport & Logistics
+  { id:'logistics',      name:'Logistics Company',   icon:'🚚', category:'Transport & Logistics' },
+  { id:'delivery',       name:'Delivery Service',    icon:'📦', category:'Transport & Logistics' },
+  { id:'taxi',           name:'Taxi Company',        icon:'🚕', category:'Transport & Logistics' },
+  { id:'ridehailing',    name:'Ride-Hailing',        icon:'🚗', category:'Transport & Logistics' },
+  { id:'shipping',       name:'Shipping Company',    icon:'🚢', category:'Transport & Logistics' },
+  { id:'travel',         name:'Travel Agency',       icon:'✈️', category:'Transport & Logistics' },
+  { id:'tour',           name:'Tour Company',        icon:'🗺️', category:'Transport & Logistics' },
+  // Manufacturing
+  { id:'manufacturing',  name:'Manufacturing Co.',   icon:'🏭', category:'Manufacturing' },
+  { id:'factory',        name:'Factory',             icon:'⚙️', category:'Manufacturing' },
+  { id:'foodprocessing', name:'Food Processing',     icon:'🥫', category:'Manufacturing' },
+  { id:'textile',        name:'Textile Company',     icon:'🧵', category:'Manufacturing' },
+  // Agriculture
+  { id:'farm',           name:'Farm',                icon:'🌾', category:'Agriculture' },
+  { id:'dairyfarm',      name:'Dairy Farm',          icon:'🐄', category:'Agriculture' },
+  { id:'poultry',        name:'Poultry Farm',        icon:'🐔', category:'Agriculture' },
+  { id:'fishfarm',       name:'Fish Farm',           icon:'🐟', category:'Agriculture' },
+  { id:'agribusiness',   name:'Agribusiness',        icon:'🌿', category:'Agriculture' },
+  // Financial Services
+  { id:'bank',           name:'Bank',                icon:'🏦', category:'Financial Services' },
+  { id:'microfinance',   name:'Microfinance',        icon:'💰', category:'Financial Services' },
+  { id:'sacco',          name:'SACCO',               icon:'🤝', category:'Financial Services' },
+  { id:'insurance',      name:'Insurance Company',   icon:'🛡️', category:'Financial Services' },
+  { id:'investment',     name:'Investment Company',  icon:'📈', category:'Financial Services' },
+  { id:'lending',        name:'Lending Company',     icon:'💳', category:'Financial Services' },
+  // Media & Entertainment
+  { id:'media',          name:'Media Company',       icon:'📺', category:'Media & Entertainment' },
+  { id:'tvstation',      name:'TV Station',          icon:'📡', category:'Media & Entertainment' },
+  { id:'radio',          name:'Radio Station',       icon:'📻', category:'Media & Entertainment' },
+  { id:'podcast',        name:'Podcast Business',    icon:'🎙️', category:'Media & Entertainment' },
+  { id:'creator',        name:'Content Creator',     icon:'🎬', category:'Media & Entertainment' },
+  { id:'influencer',     name:'Influencer',          icon:'⭐', category:'Media & Entertainment' },
+  { id:'events',         name:'Event Management',    icon:'🎪', category:'Media & Entertainment' },
+  // Non-Profit
+  { id:'ngo',            name:'NGO',                 icon:'🌍', category:'Non-Profit' },
+  { id:'charity',        name:'Charity',             icon:'❤️', category:'Non-Profit' },
+  { id:'foundation',     name:'Foundation',          icon:'🏛️', category:'Non-Profit' },
+  { id:'church',         name:'Church',              icon:'⛪', category:'Non-Profit' },
+  { id:'mosque',         name:'Mosque',              icon:'🕌', category:'Non-Profit' },
+  { id:'community',      name:'Community Org',       icon:'👥', category:'Non-Profit' },
+  // Technology
+  { id:'startup',        name:'Startup',             icon:'🚀', category:'Technology' },
+  { id:'saas',           name:'SaaS Company',        icon:'☁️', category:'Technology' },
+  { id:'ai',             name:'AI Company',          icon:'🤖', category:'Technology' },
+  { id:'blockchain',     name:'Blockchain Company',  icon:'⛓️', category:'Technology' },
+  { id:'datacompany',    name:'Data Company',        icon:'📊', category:'Technology' },
+  // Government
+  { id:'government',     name:'Government Office',   icon:'🏛️', category:'Government' },
+  { id:'county',         name:'County Office',       icon:'🗂️', category:'Government' },
+  { id:'publicservice',  name:'Public Service',      icon:'📋', category:'Government' },
+  // Personal
+  { id:'freelancer',     name:'Freelancer',          icon:'💻', category:'Personal & Independent' },
+  { id:'consultant',     name:'Consultant',          icon:'🎯', category:'Personal & Independent' },
+  { id:'coach',          name:'Coach',               icon:'🏆', category:'Personal & Independent' },
+  { id:'speaker',        name:'Speaker',             icon:'🎤', category:'Personal & Independent' },
+  { id:'solopreneur',    name:'Solopreneur',         icon:'⚡', category:'Personal & Independent' },
+  { id:'smallbusiness',  name:'Small Business',      icon:'🏪', category:'Personal & Independent' },
+  // Other
+  { id:'other',          name:'Other',               icon:'✨', category:'Other' },
 ];
 
-const teamSizes = ['Just me', '2–10', '11–50', '51–200', '200+'];
-
-const goalsList = [
-  'Get more customers', 'Automate tasks', 'Increase revenue', 
-  'Manage employees', 'Customer support', 'Marketing', 
-  'Analytics', 'Accounting'
-];
-
-const deploySteps = [
-  'Initializing AI CEO...',
-  'Creating Marketing Department...',
-  'Building Customer Support Team...',
-  'Setting up Business Intelligence...',
-  'Preparing Workspace...'
-];
-
-export default function OnboardingPage() {
+export default function Onboarding() {
   const router = useRouter();
-  
-  // State to hold our user's choices
-  const [step, setStep] = useState(1);
-  const [userName, setUserName] = useState('Founder');
-  const [businessType, setBusinessType] = useState('');
-  const [teamSize, setTeamSize] = useState('');
-  const [goals, setGoals] = useState<string[]>([]);
-  
-  // State for the cool deployment animation
-  const [deployIndex, setDeployIndex] = useState(0);
+  const [userId, setUserId]       = useState('');
+  const [selected, setSelected]   = useState('');
+  const [search, setSearch]       = useState('');
+  const [saving, setSaving]       = useState(false);
+  const [authed, setAuthed]       = useState(false);
 
-  // When the page loads, try to get the user's name from their login
   useEffect(() => {
-    async function fetchUser() {
-      const { data } = await supabase.auth.getUser();
-      if (data?.user?.user_metadata?.full_name) {
-        setUserName(data.user.user_metadata.full_name);
-      }
-    }
-    fetchUser();
-  }, []);
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { router.push('/login'); return; }
+      setUserId(session.user.id);
 
-  // Handle selecting multiple goals
-  const toggleGoal = (goal: string) => {
-    if (goals.includes(goal)) {
-      setGoals(goals.filter(g => g !== goal));
-    } else {
-      setGoals([...goals, goal]);
-    }
-  };
+      // Skip onboarding if already completed
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('business_type')
+        .eq('id', session.user.id)
+        .single();
 
-  // The function that runs the fake terminal and saves the data
-  const startDeployment = async () => {
-    setStep(5); // Move to the animation step
-    
-    // Animate through the deployment steps
-    for (let i = 0; i <= deploySteps.length; i++) {
-      await new Promise(resolve => setTimeout(resolve, 800)); // Wait 0.8 seconds per step
-      setDeployIndex(i);
-    }
+      if (profile?.business_type) { router.push('/'); return; }
+      setAuthed(true);
+    })();
+  }, [router]);
 
-    // Save choices to Supabase in the background
-    await supabase.auth.updateUser({
-      data: { business_type: businessType, team_size: teamSize, goals: goals }
+  const filtered = useMemo(() => {
+    if (!search.trim()) return INDUSTRIES;
+    const q = search.toLowerCase();
+    return INDUSTRIES.filter(i =>
+      i.name.toLowerCase().includes(q) || i.category.toLowerCase().includes(q)
+    );
+  }, [search]);
+
+  const categories = useMemo(() => {
+    const cats: Record<string, Industry[]> = {};
+    filtered.forEach(i => {
+      if (!cats[i.category]) cats[i.category] = [];
+      cats[i.category].push(i);
     });
+    return cats;
+  }, [filtered]);
 
-    // Move to the final personalized dashboard screen
-    setStep(6);
+  const handleContinue = async () => {
+    if (!selected || !userId) return;
+    setSaving(true);
+    try {
+      await supabase.from('profiles').update({ business_type: selected }).eq('id', userId);
+      router.push('/');
+    } catch {
+      setSaving(false);
+    }
   };
 
-  // --- UI Components ---
+  if (!authed) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-neutral-950">
+        <p className="text-sm text-neutral-500 animate-pulse">Preparing your workspace...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center overflow-hidden relative font-sans selection:bg-emerald-500/30">
-      
-      {/* Background Glowing Effects */}
-      <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[120px] pointer-events-none" />
+    <div className="min-h-screen bg-neutral-950 text-white flex flex-col">
 
-      {/* Main Content Box */}
-      <div className="w-full max-w-3xl px-6 relative z-10">
-        
-        <AnimatePresence mode="wait">
-          
-          {/* STEP 1: WELCOME SCREEN */}
-          {step === 1 && (
-            <motion.div 
-              key="step1"
-              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
-              className="text-center space-y-12"
-            >
-              <div className="space-y-4">
-                <motion.div 
-                  initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: 0.2 }}
-                  className="w-16 h-16 bg-white/10 border border-white/20 rounded-2xl flex items-center justify-center mx-auto mb-6 backdrop-blur-md shadow-[0_0_30px_rgba(255,255,255,0.1)]"
-                >
-                  <Sparkles size={28} className="text-white" />
-                </motion.div>
-                <h1 className="text-4xl md:text-5xl font-bold tracking-tight">Welcome to AI-BOS</h1>
-                <p className="text-lg text-neutral-400 max-w-xl mx-auto">
-                  Your AI workforce is ready. Let's build your business operating system in under 60 seconds.
-                </p>
-              </div>
+      {/* Header */}
+      <div className="px-5 pt-8 pb-4 flex-shrink-0">
+        {/* Progress */}
+        <div className="flex gap-1.5 mb-6">
+          {[1,2,3,4].map(s => (
+            <div key={s} className={`h-1 flex-1 rounded-full ${s <= 2 ? 'bg-white' : 'bg-neutral-800'}`} />
+          ))}
+        </div>
 
-              {/* Animated AI Employee Cards */}
-              <div className="flex flex-wrap justify-center gap-4">
-                {['AI CEO', 'AI Marketing Manager', 'AI Sales Agent', 'AI Accountant', 'AI Support Agent'].map((role, i) => (
-                  <motion.div
-                    key={role}
-                    initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 + (i * 0.1) }}
-                    className="px-5 py-3 rounded-full bg-white/5 border border-white/10 backdrop-blur-md text-sm font-medium text-neutral-300 flex items-center gap-2"
-                  >
-                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    {role}
-                  </motion.div>
-                ))}
-              </div>
+        {/* Brand */}
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center flex-shrink-0">
+            <span className="text-black font-bold text-base">Ω</span>
+          </div>
+          <div>
+            <p className="text-white font-semibold text-sm tracking-wide">AI-BOS</p>
+            <p className="text-neutral-500 text-xs tracking-widest uppercase">Enterprise OS</p>
+          </div>
+        </div>
 
-              <motion.button
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.2 }}
-                onClick={() => setStep(2)}
-                className="mx-auto mt-12 bg-white text-black px-8 py-4 rounded-xl font-semibold flex items-center gap-2 hover:bg-neutral-200 transition-all shadow-[0_0_40px_rgba(255,255,255,0.2)] hover:scale-105 active:scale-95"
-              >
-                Initialize Systems <ArrowRight size={18} />
-              </motion.button>
-            </motion.div>
-          )}
+        <h1 className="text-2xl font-semibold text-white tracking-tight leading-tight mb-2">
+          What type of business<br />do you operate?
+        </h1>
+        <p className="text-sm text-neutral-500 leading-relaxed mb-5">
+          We'll build your custom AI workspace, dashboards, and agents based on your industry.
+        </p>
 
-          {/* STEP 2: BUSINESS TYPE */}
-          {step === 2 && (
-            <motion.div 
-              key="step2"
-              initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }}
-              className="max-w-2xl mx-auto w-full"
-            >
-              <h2 className="text-3xl font-semibold mb-2">Identify your industry.</h2>
-              <p className="text-neutral-400 mb-8">This determines the specialized skills your AI workforce will boot up with.</p>
-              
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {businessTypes.map((biz) => {
-                  const Icon = biz.icon;
-                  const isSelected = businessType === biz.id;
-                  return (
-                    <button
-                      key={biz.id}
-                      onClick={() => { setBusinessType(biz.id); setTimeout(() => setStep(3), 400); }}
-                      className={`p-6 rounded-2xl border flex flex-col items-center justify-center gap-4 transition-all duration-300 ${
-                        isSelected 
-                          ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.15)] scale-105' 
-                          : 'bg-white/5 border-white/10 text-neutral-400 hover:bg-white/10 hover:border-white/20'
-                      }`}
-                    >
-                      <Icon size={28} className={isSelected ? 'text-emerald-400' : 'text-neutral-300'} />
-                      <span className="font-medium text-sm">{biz.id}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </motion.div>
-          )}
-
-          {/* STEP 3: TEAM SIZE */}
-          {step === 3 && (
-            <motion.div 
-              key="step3"
-              initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }}
-              className="max-w-md mx-auto w-full"
-            >
-              <h2 className="text-3xl font-semibold mb-2">Scale the architecture.</h2>
-              <p className="text-neutral-400 mb-8">How many people currently work in your organization?</p>
-              
-              <div className="space-y-3">
-                {teamSizes.map((size) => {
-                  const isSelected = teamSize === size;
-                  return (
-                    <button
-                      key={size}
-                      onClick={() => { setTeamSize(size); setTimeout(() => setStep(4), 400); }}
-                      className={`w-full p-5 rounded-2xl border flex items-center justify-between transition-all duration-300 ${
-                        isSelected 
-                          ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.15)] scale-105' 
-                          : 'bg-white/5 border-white/10 text-neutral-300 hover:bg-white/10 hover:border-white/20'
-                      }`}
-                    >
-                      <span className="font-medium text-lg">{size}</span>
-                      {isSelected && <CheckCircle2 size={20} className="text-emerald-400" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </motion.div>
-          )}
-
-          {/* STEP 4: GOALS */}
-          {step === 4 && (
-            <motion.div 
-              key="step4"
-              initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }}
-              className="max-w-2xl mx-auto w-full"
-            >
-              <h2 className="text-3xl font-semibold mb-2">Set operational directives.</h2>
-              <p className="text-neutral-400 mb-8">What would you like AI-BOS to execute first? (Select all that apply)</p>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-10">
-                {goalsList.map((goal) => {
-                  const isSelected = goals.includes(goal);
-                  return (
-                    <button
-                      key={goal}
-                      onClick={() => toggleGoal(goal)}
-                      className={`p-4 rounded-xl border flex items-center gap-4 transition-all duration-200 ${
-                        isSelected 
-                          ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' 
-                          : 'bg-white/5 border-white/10 text-neutral-300 hover:bg-white/10'
-                      }`}
-                    >
-                      <div className={`w-5 h-5 rounded border flex items-center justify-center ${isSelected ? 'border-emerald-500 bg-emerald-500 text-neutral-950' : 'border-neutral-600'}`}>
-                        {isSelected && <CheckCircle2 size={14} />}
-                      </div>
-                      <span className="font-medium text-sm">{goal}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <button
-                onClick={startDeployment}
-                disabled={goals.length === 0}
-                className="w-full bg-white text-black py-4 rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-neutral-200 transition-all disabled:opacity-50 shadow-[0_0_30px_rgba(255,255,255,0.15)]"
-              >
-                Deploy AI Workforce <ArrowRight size={18} />
-              </button>
-            </motion.div>
-          )}
-
-          {/* STEP 5: DEPLOYMENT ANIMATION */}
-          {step === 5 && (
-            <motion.div 
-              key="step5"
-              initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
-              className="max-w-lg mx-auto w-full"
-            >
-              <div className="bg-neutral-900/50 border border-white/10 rounded-3xl p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden">
-                {/* Scanning line effect */}
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-emerald-500 to-transparent animate-[scan_2s_ease-in-out_infinite]" />
-                
-                <h2 className="text-2xl font-semibold mb-8 flex items-center gap-3">
-                  <div className="w-5 h-5 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
-                  Booting Architecture...
-                </h2>
-
-                <div className="space-y-4">
-                  {deploySteps.map((deployStep, idx) => {
-                    const isCompleted = deployIndex > idx;
-                    const isActive = deployIndex === idx;
-                    const isPending = deployIndex < idx;
-
-                    return (
-                      <div key={idx} className={`flex items-center gap-4 text-sm font-mono transition-all duration-500 ${isPending ? 'opacity-30' : 'opacity-100'}`}>
-                        <div className="w-6 flex justify-center">
-                          {isCompleted ? (
-                            <CheckCircle2 size={18} className="text-emerald-500" />
-                          ) : isActive ? (
-                            <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                          ) : (
-                            <div className="w-1.5 h-1.5 rounded-full bg-neutral-700" />
-                          )}
-                        </div>
-                        <span className={isCompleted ? 'text-neutral-400' : isActive ? 'text-white' : 'text-neutral-600'}>
-                          {deployStep}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {/* STEP 6: SUCCESS & DASHBOARD LAUNCH */}
-          {step === 6 && (
-            <motion.div 
-              key="step6"
-              initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-              className="max-w-md mx-auto w-full text-center"
-            >
-              <div className="w-24 h-24 bg-emerald-500/10 border border-emerald-500/30 rounded-full flex items-center justify-center mx-auto mb-8 shadow-[0_0_50px_rgba(16,185,129,0.2)]">
-                <CheckCircle2 size={48} className="text-emerald-400" />
-              </div>
-              
-              <h1 className="text-4xl font-bold mb-4 tracking-tight">Welcome back, {userName}</h1>
-              
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-8 text-left backdrop-blur-md">
-                <p className="text-neutral-400 text-sm mb-4">Your AI workforce has been successfully deployed and is on standby.</p>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between border-b border-white/5 pb-2">
-                    <span className="text-neutral-500">Business Type</span>
-                    <span className="text-white font-medium">{businessType}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-white/5 pb-2">
-                    <span className="text-neutral-500">Active AI Employees</span>
-                    <span className="text-white font-medium">12 Agents</span>
-                  </div>
-                  <div className="flex justify-between pt-1">
-                    <span className="text-neutral-500">System Status</span>
-                    <span className="text-emerald-400 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> Ready to assist
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={() => router.push('/dashboard')}
-                className="w-full bg-emerald-500 text-neutral-950 py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-400 transition-all shadow-[0_0_30px_rgba(16,185,129,0.3)] hover:scale-[1.02] active:scale-[0.98]"
-              >
-                <LayoutDashboard size={18} />
-                Launch AI Command Center
-              </button>
-            </motion.div>
-          )}
-
-        </AnimatePresence>
+        {/* Search */}
+        <div className="relative mb-2">
+          <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-600" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search industries..."
+            className="w-full bg-neutral-900 border border-neutral-800 rounded-xl pl-9 pr-4 py-3 text-sm text-white placeholder-neutral-600 outline-none focus:border-neutral-700 transition-colors"
+          />
+        </div>
       </div>
-      
-      {/* Required for the scanning line animation in Step 5 */}
-      <style dangerouslySetInnerHTML={{__html: `
-        @keyframes scan {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(100%); }
-        }
-      `}} />
+
+      {/* Industry grid — scrollable */}
+      <div className="flex-1 overflow-y-auto px-5 pb-32">
+        {Object.entries(categories).map(([cat, items]) => (
+          <div key={cat} className="mb-6">
+            <p className="text-[10px] font-semibold text-neutral-600 tracking-widest uppercase mb-3">
+              {cat}
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {items.map(industry => {
+                const isSelected = selected === industry.id;
+                return (
+                  <button
+                    key={industry.id}
+                    onClick={() => setSelected(industry.id)}
+                    className={`relative flex flex-col items-start p-3.5 rounded-2xl border text-left transition-all active:scale-95 ${
+                      isSelected
+                        ? 'bg-emerald-950/40 border-emerald-800/60'
+                        : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-800/60'
+                    }`}
+                  >
+                    {isSelected && (
+                      <div className="absolute top-2.5 right-2.5 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center">
+                        <Check size={9} className="text-black" />
+                      </div>
+                    )}
+                    <span className="text-xl mb-2">{industry.icon}</span>
+                    <span className={`text-xs font-medium leading-tight ${isSelected ? 'text-emerald-300' : 'text-neutral-300'}`}>
+                      {industry.name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Sticky footer CTA */}
+      <div className="fixed bottom-0 left-0 right-0 px-5 pb-8 pt-4 bg-neutral-950 border-t border-neutral-900">
+        {selected && (
+          <p className="text-xs text-neutral-500 text-center mb-3">
+            Selected: <span className="text-white font-medium">
+              {INDUSTRIES.find(i => i.id === selected)?.name}
+            </span>
+          </p>
+        )}
+        <button
+          onClick={handleContinue}
+          disabled={!selected || saving}
+          className="w-full bg-white hover:bg-neutral-100 text-black font-semibold py-4 rounded-2xl text-sm transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+        >
+          {saving ? (
+            <><Loader2 size={16} className="animate-spin" /> Building your workspace...</>
+          ) : (
+            <><span>✨</span> Build my AI workspace <ArrowRight size={16} /></>
+          )}
+        </button>
+        <p className="text-center text-xs text-neutral-700 mt-2">Your workspace will be ready in seconds</p>
+      </div>
     </div>
   );
-                                   }
-      
+    }
